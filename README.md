@@ -12,7 +12,11 @@ curl -fsSL https://raw.githubusercontent.com/element10-network/NEON-releases/mai
 ```
 
 Then open `http://<hostname>.local` (or `http://<address>:8080`) and finish the setup page.
-Atoms update themselves from the releases here (panel: Settings → Updates).
+Atoms install new releases from here by themselves, at night (panel: Settings → Updates).
+
+Testers: start with [GUIDE.md](GUIDE.md).
+
+A ready SD card image is the release [`sd-image`](https://github.com/element10-network/NEON-releases/releases/tag/sd-image).
 
 ## Checking a release
 

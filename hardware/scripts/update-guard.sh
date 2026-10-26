@@ -33,8 +33,9 @@ echo "$n" > "$STATE/update.attempts"
 # other start before neond confirmed the update follows a crash or an exit.
 if [ "$n" -gt 1 ] && [ -f "$BIN.prev" ]; then
     mv -f "$BIN.prev" "$BIN"
-    rm -f "$STATE/update.json" "$STATE/update.attempts" "$STATE/update.boot"
-    touch "$STATE/update.rolledback"
+    # The marker names the version that failed: automatic updates do not install it again.
+    mv -f "$STATE/update.json" "$STATE/update.rolledback"
+    rm -f "$STATE/update.attempts" "$STATE/update.boot"
     echo "neon update-guard: the new neond did not stay up; previous version restored" >&2
 fi
 exit 0
