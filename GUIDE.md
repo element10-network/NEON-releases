@@ -49,7 +49,7 @@ joins it and the Neon-Setup network goes away; reconnect your phone to your home
   theirs. Turn it off to keep that to yourself.
 
 Your panel password and wallet keys never leave your devices. Questions or a request to delete what the
-network holds about you: contact the person who gave you the atom.
+network holds about you: write to **neon-testers@enzyme42.com**.
 
 ## 5. Giving it back or passing it on
 
@@ -61,4 +61,4 @@ network, wipes your settings, messages, wallet and Wi-Fi, and starts as new.
 - No page at `neon-xxxx.local`: wait 10 minutes after power-up, then try `http://ADDRESS:8080`.
 - The bottom bar says the packet forwarder is not sending: restart the atom with the round arrow at the
   top right of the panel, or unplug the power for 10 seconds.
-- Anything else: send a screenshot of the page to the person who gave you the atom.
+- Anything else: send a screenshot of the page to **neon-testers@enzyme42.com**.
