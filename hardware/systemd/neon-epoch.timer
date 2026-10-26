@@ -1,0 +1,11 @@
+[Unit]
+Description=Neon weekly token epoch (checked daily; runs when a week is over)
+
+[Timer]
+# After the day logs of the finished day are signed (the hub's points round past 00:00 UTC).
+OnCalendar=*-*-* 02:30:00 UTC
+Persistent=true
+RandomizedDelaySec=10min
+
+[Install]
+WantedBy=timers.target

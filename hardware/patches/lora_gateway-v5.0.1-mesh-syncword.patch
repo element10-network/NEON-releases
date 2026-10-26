@@ -1,0 +1,69 @@
+diff --git a/libloragw/inc/loragw_hal.h b/libloragw/inc/loragw_hal.h
+index d5f9ade..a873018 100644
+--- a/libloragw/inc/loragw_hal.h
++++ b/libloragw/inc/loragw_hal.h
+@@ -177,6 +177,7 @@ enum lgw_radio_type_e {
+ struct lgw_conf_board_s {
+     bool    lorawan_public; /*!> Enable ONLY for *public* networks using the LoRa MAC protocol */
+     uint8_t clksrc;         /*!> Index of RF chain which provides clock to concentrator */
++    uint8_t mesh_syncword;  /*!> Neon: if non-zero, LoRa 'stand-alone' (service) channel RX and non-inverted-polarity TX use this syncword (e.g. 0x2B for Meshtastic) */
+ };
+ 
+ /**
+diff --git a/libloragw/src/loragw_hal.c b/libloragw/src/loragw_hal.c
+index 8103751..5eb41ef 100644
+--- a/libloragw/src/loragw_hal.c
++++ b/libloragw/src/loragw_hal.c
+@@ -135,6 +135,7 @@ static uint64_t fsk_sync_word= 0xC194C1; /* default FSK sync word (ALIGNED RIGHT
+ 
+ static bool lorawan_public = false;
+ static uint8_t rf_clkout = 0;
++static uint8_t mesh_syncword = 0; /* Neon: 0 = follow lorawan_public */
+ 
+ static struct lgw_tx_gain_lut_s txgain_lut = {
+     .size = 2,
+@@ -292,7 +293,11 @@ void lgw_constant_adjust(void) {
+     // lgw_reg_w(LGW_MBWSSF_FRAME_SYNCH_GAIN,1); /* default 1 */
+     // lgw_reg_w(LGW_MBWSSF_SYNCH_DETECT_TH,1); /* default 1 */
+     // lgw_reg_w(LGW_MBWSSF_ZERO_PAD,0); /* default 0 */
+-    if (lorawan_public) { /* LoRa network */
++    if (mesh_syncword != 0) { /* Neon: SX1301 peak positions are the syncword nibbles */
++        printf("INFO: LoRa stand-alone channel uses mesh syncword 0x%02X\n", mesh_syncword);
++        lgw_reg_w(LGW_MBWSSF_FRAME_SYNCH_PEAK1_POS, mesh_syncword >> 4);
++        lgw_reg_w(LGW_MBWSSF_FRAME_SYNCH_PEAK2_POS, mesh_syncword & 0x0F);
++    } else if (lorawan_public) { /* LoRa network */
+         lgw_reg_w(LGW_MBWSSF_FRAME_SYNCH_PEAK1_POS,3); /* default 1 */
+         lgw_reg_w(LGW_MBWSSF_FRAME_SYNCH_PEAK2_POS,4); /* default 2 */
+     } else {
+@@ -423,8 +428,9 @@ int lgw_board_setconf(struct lgw_conf_board_s conf) {
+     /* set internal config according to parameters */
+     lorawan_public = conf.lorawan_public;
+     rf_clkout = conf.clksrc;
++    mesh_syncword = conf.mesh_syncword;
+ 
+-    DEBUG_PRINTF("Note: board configuration; lorawan_public:%d, clksrc:%d\n", lorawan_public, rf_clkout);
++    DEBUG_PRINTF("Note: board configuration; lorawan_public:%d, clksrc:%d, mesh_syncword:0x%02X\n", lorawan_public, rf_clkout, mesh_syncword);
+ 
+     return LGW_HAL_SUCCESS;
+ }
+@@ -1595,6 +1601,20 @@ int lgw_send(struct lgw_pkt_tx_s pkt_data) {
+     /* reset TX command flags */
+     lgw_abort_tx();
+ 
++    /* Neon: LoRaWAN downlinks use inverted polarity; mesh traffic does not */
++    if ((mesh_syncword != 0) && (pkt_data.modulation == MOD_LORA)) {
++        if (pkt_data.invert_pol == false) {
++            lgw_reg_w(LGW_TX_FRAME_SYNCH_PEAK1_POS, mesh_syncword >> 4);
++            lgw_reg_w(LGW_TX_FRAME_SYNCH_PEAK2_POS, mesh_syncword & 0x0F);
++        } else if (lorawan_public) {
++            lgw_reg_w(LGW_TX_FRAME_SYNCH_PEAK1_POS, 3);
++            lgw_reg_w(LGW_TX_FRAME_SYNCH_PEAK2_POS, 4);
++        } else {
++            lgw_reg_w(LGW_TX_FRAME_SYNCH_PEAK1_POS, 1);
++            lgw_reg_w(LGW_TX_FRAME_SYNCH_PEAK2_POS, 2);
++        }
++    }
++
+     /* put metadata + payload in the TX data buffer */
+     lgw_reg_w(LGW_TX_DATA_BUF_ADDR, 0);
+     lgw_reg_wb(LGW_TX_DATA_BUF_DATA, buff, transfer_size);

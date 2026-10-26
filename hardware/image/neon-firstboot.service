@@ -1,0 +1,13 @@
+[Unit]
+Description=Neon station: install on first boot (settings in neon.txt on the boot partition)
+Wants=network-online.target
+After=network-online.target time-sync.target
+ConditionPathExists=!/opt/neon/.image-setup-done
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/neon-firstboot
+TimeoutStartSec=infinity
+
+[Install]
+WantedBy=multi-user.target

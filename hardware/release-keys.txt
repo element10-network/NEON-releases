@@ -1,0 +1,6 @@
+# Ed25519 public keys (base64, one per line) allowed to sign Neon station releases.
+# Built into neond (panel updates) and read by hardware/scripts/setup.sh (installs).
+# Make a key with `neon-release keygen`; keep the secret offline and in the repository
+# secret NEON_RELEASE_KEY (used only by the Release workflow's publish job; docs/INSTALL.md);
+# put the public key here.
+3uHOV7U6pfQy7JZS9oIVexR8+kdWJLvPlLEDz5ZnJhE=

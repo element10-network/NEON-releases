@@ -1,0 +1,22 @@
+diff --git a/lora_pkt_fwd/src/lora_pkt_fwd.c b/lora_pkt_fwd/src/lora_pkt_fwd.c
+index 801f28d..60cd860 100644
+--- a/lora_pkt_fwd/src/lora_pkt_fwd.c
++++ b/lora_pkt_fwd/src/lora_pkt_fwd.c
+@@ -319,7 +319,16 @@ static int parse_SX1301_configuration(const char * conf_file) {
+         MSG("WARNING: Data type for clksrc seems wrong, please check\n");
+         boardconf.clksrc = 0;
+     }
+-    MSG("INFO: lorawan_public %d, clksrc %d\n", boardconf.lorawan_public, boardconf.clksrc);
++    /* Neon: optional mesh syncword, as a number (43) or a hex string ("0x2B") */
++    val = json_object_get_value(conf_obj, "mesh_syncword"); /* fetch value (if possible) */
++    if (json_value_get_type(val) == JSONNumber) {
++        boardconf.mesh_syncword = (uint8_t)json_value_get_number(val);
++    } else if (json_value_get_type(val) == JSONString) {
++        boardconf.mesh_syncword = (uint8_t)strtoul(json_value_get_string(val), NULL, 0);
++    } else if (val != NULL) {
++        MSG("WARNING: Data type for mesh_syncword seems wrong, please check\n");
++    }
++    MSG("INFO: lorawan_public %d, clksrc %d, mesh_syncword 0x%02X\n", boardconf.lorawan_public, boardconf.clksrc, boardconf.mesh_syncword);
+     /* all parameters parsed, submitting configuration to the HAL */
+     if (lgw_board_setconf(boardconf) != LGW_HAL_SUCCESS) {
+         MSG("ERROR: Failed to configure board\n");

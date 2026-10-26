@@ -1,0 +1,22 @@
+[Unit]
+Description=Neon station daemon
+After=network-online.target neon-forwarder.service
+Wants=network-online.target
+
+[Service]
+EnvironmentFile=/opt/neon/neond.env
+# Puts the previous binary back if a panel update does not start (see update-guard.sh).
+ExecStartPre=-/opt/neon/update-guard.sh
+ExecStart=/usr/local/bin/neond $NEOND_ARGS
+# Root (updates, nmcli, port 80), but no home directories, its own /tmp, and the kernel's
+# settings read-only (verify: Wi-Fi join, country, update and the hotspot under these).
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+# Always: a new binary that exits cleanly at once must be counted by the update guard too.
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

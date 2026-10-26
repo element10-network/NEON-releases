@@ -1,0 +1,308 @@
+diff --git a/libloragw/inc/loragw_hal.h b/libloragw/inc/loragw_hal.h
+index 6e153a3..0e95643 100644
+--- a/libloragw/inc/loragw_hal.h
++++ b/libloragw/inc/loragw_hal.h
+@@ -160,6 +160,8 @@ struct lgw_conf_board_s {
+     bool            full_duplex;    /*!> Indicates if the gateway operates in full duplex mode or not */
+     lgw_com_type_t  com_type;       /*!> The COMmunication interface (SPI/USB) to connect to the SX1302 */
+     char            com_path[64];   /*!> Path to access the COM device to connect to the SX1302 */
++    uint8_t         mesh_syncword;  /*!> Neon: if non-zero, LoRa service channel RX and non-inverted-polarity TX use this syncword (e.g. 0x2B for Meshtastic) */
++    uint16_t        mesh_preamble;  /*!> Neon: if non-zero, preamble length (symbols) the LoRa service channel expects (16 for Meshtastic) */
+ };
+ 
+ /**
+diff --git a/libloragw/inc/loragw_sx1302.h b/libloragw/inc/loragw_sx1302.h
+index 9751621..d604b90 100644
+--- a/libloragw/inc/loragw_sx1302.h
++++ b/libloragw/inc/loragw_sx1302.h
+@@ -208,7 +208,7 @@ int sx1302_lora_service_correlator_configure(struct lgw_conf_rxif_s * cfg);
+ @param lora_service_sf  The spreading factor configured for the single-SF LoRa modem
+ @return LGW_REG_SUCCESS if success, LGW_REG_ERROR otherwise
+ */
+-int sx1302_lora_syncword(bool public, uint8_t lora_service_sf);
++int sx1302_lora_syncword(bool public, uint8_t lora_service_sf, uint8_t mesh_syncword);
+ 
+ /**
+ @brief Configure the LoRa multi-SF modems
+@@ -223,7 +223,7 @@ int sx1302_lora_modem_configure(uint32_t radio_freq_hz);
+ @param radio_freq_hz    The center frequency of the RF chain (0 or 1)
+ @return LGW_REG_SUCCESS if success, LGW_REG_ERROR otherwise
+ */
+-int sx1302_lora_service_modem_configure(struct lgw_conf_rxif_s * cfg, uint32_t radio_freq_hz);
++int sx1302_lora_service_modem_configure(struct lgw_conf_rxif_s * cfg, uint32_t radio_freq_hz, uint16_t mesh_preamble);
+ 
+ /**
+ @brief Configure the FSK modem
+@@ -435,7 +435,7 @@ int sx1302_tx_configure(lgw_radio_type_t radio_type);
+ @param TODO
+ @return TODO
+ */
+-int sx1302_send(lgw_radio_type_t radio_type, struct lgw_tx_gain_lut_s * tx_lut, bool lwan_public, struct lgw_conf_rxif_s * context_fsk, struct lgw_pkt_tx_s * pkt_data);
++int sx1302_send(lgw_radio_type_t radio_type, struct lgw_tx_gain_lut_s * tx_lut, bool lwan_public, uint8_t mesh_syncword, struct lgw_conf_rxif_s * context_fsk, struct lgw_pkt_tx_s * pkt_data);
+ 
+ /**
+ @brief TODO
+diff --git a/libloragw/src/loragw_hal.c b/libloragw/src/loragw_hal.c
+index ffc8ec0..e04371b 100644
+--- a/libloragw/src/loragw_hal.c
++++ b/libloragw/src/loragw_hal.c
+@@ -127,6 +127,8 @@ static lgw_context_t lgw_context = {
+     .board_cfg.lorawan_public = true,
+     .board_cfg.clksrc = 0,
+     .board_cfg.full_duplex = false,
++    .board_cfg.mesh_syncword = 0,
++    .board_cfg.mesh_preamble = 0,
+     .rf_chain_cfg = {{0}},
+     .if_chain_cfg = {{0}},
+     .demod_cfg = {
+@@ -202,6 +204,9 @@ static lgw_context_t lgw_context = {
+ /* File handle to write debug logs */
+ FILE * log_file = NULL;
+ 
++/* Neon: temperature assumed when the board has no STTS751 sensor */
++#define NEON_DEFAULT_TEMPERATURE 25.0
++
+ /* I2C temperature sensor handles */
+ static int     ts_fd = -1;
+ static uint8_t ts_addr = 0xFF;
+@@ -467,6 +472,8 @@ int lgw_board_setconf(struct lgw_conf_board_s * conf) {
+     CONTEXT_LWAN_PUBLIC = conf->lorawan_public;
+     CONTEXT_BOARD.clksrc = conf->clksrc;
+     CONTEXT_BOARD.full_duplex = conf->full_duplex;
++    CONTEXT_BOARD.mesh_syncword = conf->mesh_syncword;
++    CONTEXT_BOARD.mesh_preamble = conf->mesh_preamble;
+     CONTEXT_COM_TYPE = conf->com_type;
+     strncpy(CONTEXT_COM_PATH, conf->com_path, sizeof CONTEXT_COM_PATH);
+     CONTEXT_COM_PATH[sizeof CONTEXT_COM_PATH - 1] = '\0'; /* ensure string termination */
+@@ -973,7 +980,7 @@ int lgw_start(void) {
+             printf("ERROR: failed to configure SX1302 LoRa Service modem correlators\n");
+             return LGW_HAL_ERROR;
+         }
+-        err = sx1302_lora_service_modem_configure(&(CONTEXT_LORA_SERVICE), CONTEXT_RF_CHAIN[0].freq_hz);
++        err = sx1302_lora_service_modem_configure(&(CONTEXT_LORA_SERVICE), CONTEXT_RF_CHAIN[0].freq_hz, CONTEXT_BOARD.mesh_preamble);
+         if (err != LGW_REG_SUCCESS) {
+             printf("ERROR: failed to configure SX1302 LoRa Service modem\n");
+             return LGW_HAL_ERROR;
+@@ -990,7 +997,7 @@ int lgw_start(void) {
+     }
+ 
+     /* configure syncword */
+-    err = sx1302_lora_syncword(CONTEXT_LWAN_PUBLIC, CONTEXT_LORA_SERVICE.datarate);
++    err = sx1302_lora_syncword(CONTEXT_LWAN_PUBLIC, CONTEXT_LORA_SERVICE.datarate, CONTEXT_BOARD.mesh_syncword);
+     if (err != LGW_REG_SUCCESS) {
+         printf("ERROR: failed to configure SX1302 LoRa syncword\n");
+         return LGW_HAL_ERROR;
+@@ -1113,8 +1120,9 @@ int lgw_start(void) {
+             }
+         }
+         if (i == sizeof I2C_PORT_TEMP_SENSOR) {
+-            printf("ERROR: no temperature sensor found.\n");
+-            return LGW_HAL_ERROR;
++            /* Neon: boards such as the RAK Hotspot Miner V2 have no STTS751; assume a fixed temperature */
++            printf("WARNING: no temperature sensor found, assuming %.1f C for RSSI compensation\n", NEON_DEFAULT_TEMPERATURE);
++            ts_fd = -1;
+         }
+ 
+         /* Configure ADC AD338R for full duplex (CN490 reference design) */
+@@ -1222,11 +1230,14 @@ int lgw_stop(void) {
+     }
+ 
+     if (CONTEXT_COM_TYPE == LGW_COM_SPI) {
+-        DEBUG_MSG("INFO: Closing I2C for temperature sensor\n");
+-        x = i2c_linuxdev_close(ts_fd);
+-        if (x != 0) {
+-            printf("ERROR: failed to close I2C temperature sensor device (err=%i)\n", x);
+-            err = LGW_HAL_ERROR;
++        if (ts_fd >= 0) {
++            DEBUG_MSG("INFO: Closing I2C for temperature sensor\n");
++            x = i2c_linuxdev_close(ts_fd);
++            if (x != 0) {
++                printf("ERROR: failed to close I2C temperature sensor device (err=%i)\n", x);
++                err = LGW_HAL_ERROR;
++            }
++            ts_fd = -1;
+         }
+ 
+         if (CONTEXT_BOARD.full_duplex == true) {
+@@ -1432,7 +1443,7 @@ int lgw_send(struct lgw_pkt_tx_s * pkt_data) {
+     }
+ 
+     /* Send the TX request to the concentrator */
+-    err = sx1302_send(CONTEXT_RF_CHAIN[pkt_data->rf_chain].type, &CONTEXT_TX_GAIN_LUT[pkt_data->rf_chain], CONTEXT_LWAN_PUBLIC, &CONTEXT_FSK, pkt_data);
++    err = sx1302_send(CONTEXT_RF_CHAIN[pkt_data->rf_chain].type, &CONTEXT_TX_GAIN_LUT[pkt_data->rf_chain], CONTEXT_LWAN_PUBLIC, CONTEXT_BOARD.mesh_syncword, &CONTEXT_FSK, pkt_data);
+     if (err != LGW_REG_SUCCESS) {
+         printf("ERROR: %s: Failed to send packet\n", __FUNCTION__);
+ 
+@@ -1597,7 +1608,12 @@ int lgw_get_temperature(float* temperature) {
+ 
+     switch (CONTEXT_COM_TYPE) {
+         case LGW_COM_SPI:
+-            err = stts751_get_temperature(ts_fd, ts_addr, temperature);
++            if (ts_fd < 0) {
++                *temperature = NEON_DEFAULT_TEMPERATURE; /* Neon: no sensor on this board */
++                err = LGW_HAL_SUCCESS;
++            } else {
++                err = stts751_get_temperature(ts_fd, ts_addr, temperature);
++            }
+             break;
+         case LGW_COM_USB:
+             err = lgw_com_get_temperature(temperature);
+diff --git a/libloragw/src/loragw_sx1302.c b/libloragw/src/loragw_sx1302.c
+index aa330cd..877aa36 100644
+--- a/libloragw/src/loragw_sx1302.c
++++ b/libloragw/src/loragw_sx1302.c
+@@ -991,10 +991,10 @@ int sx1302_lora_modem_configure(uint32_t radio_freq_hz) {
+ 
+ /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+ 
+-int sx1302_lora_service_modem_configure(struct lgw_conf_rxif_s * cfg, uint32_t radio_freq_hz) {
++int sx1302_lora_service_modem_configure(struct lgw_conf_rxif_s * cfg, uint32_t radio_freq_hz, uint16_t mesh_preamble) {
+     uint16_t mantissa = 0;
+     uint8_t exponent = 0;
+-    uint8_t preamble_nb_symb;
++    uint16_t preamble_nb_symb;
+     int err = LGW_REG_SUCCESS;
+ 
+     err |= lgw_reg_w(SX1302_REG_RX_TOP_LORA_SERVICE_FSK_DC_NOTCH_CFG1_ENABLE, 0x00);
+@@ -1056,6 +1056,11 @@ int sx1302_lora_service_modem_configure(struct lgw_conf_rxif_s * cfg, uint32_t r
+     } else {
+         preamble_nb_symb = 8;
+     }
++    /* Neon: the demodulator does not lock on preambles much longer than this setting, and
++       Meshtastic sends 16 symbols, so the mesh channel must expect 16 */
++    if (mesh_preamble != 0) {
++        preamble_nb_symb = mesh_preamble;
++    }
+     printf("INFO: LoRa Service modem: configuring preamble size to %u symbols\n", preamble_nb_symb);
+     err |= lgw_reg_w(SX1302_REG_RX_TOP_LORA_SERVICE_FSK_TXRX_CFG7_PREAMBLE_SYMB_NB, (preamble_nb_symb >> 8) & 0xFF); /* MSB */
+     err |= lgw_reg_w(SX1302_REG_RX_TOP_LORA_SERVICE_FSK_TXRX_CFG6_PREAMBLE_SYMB_NB, (preamble_nb_symb >> 0) & 0xFF); /* LSB */
+@@ -1108,7 +1113,18 @@ int sx1302_modem_enable(void) {
+ 
+ /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+ 
+-int sx1302_lora_syncword(bool public, uint8_t lora_service_sf) {
++/* Neon: the SX1302 frame-synch peak positions are twice the syncword nibbles
++   (0x12 -> 2,4 and 0x34 -> 6,8). The registers are 5 bits wide; values above 15
++   are written as their 5-bit pattern. */
++static int32_t mesh_sync_peak1(uint8_t syncword) {
++    return (syncword >> 4) * 2;
++}
++
++static int32_t mesh_sync_peak2(uint8_t syncword) {
++    return (syncword & 0x0F) * 2;
++}
++
++int sx1302_lora_syncword(bool public, uint8_t lora_service_sf, uint8_t mesh_syncword) {
+     int err = LGW_REG_SUCCESS;
+ 
+     /* Multi-SF modem configuration */
+@@ -1128,7 +1144,11 @@ int sx1302_lora_syncword(bool public, uint8_t lora_service_sf) {
+     }
+ 
+     /* LoRa Service modem configuration */
+-    if ((public == false) || (lora_service_sf == DR_LORA_SF5) || (lora_service_sf == DR_LORA_SF6)) {
++    if (mesh_syncword != 0) {
++        printf("INFO: configuring LoRa (Service) SF%u with mesh syncword 0x%02X (peaks %d,%d)\n", lora_service_sf, mesh_syncword, mesh_sync_peak1(mesh_syncword), mesh_sync_peak2(mesh_syncword));
++        err |= lgw_reg_w(SX1302_REG_RX_TOP_LORA_SERVICE_FSK_FRAME_SYNCH0_PEAK1_POS, mesh_sync_peak1(mesh_syncword));
++        err |= lgw_reg_w(SX1302_REG_RX_TOP_LORA_SERVICE_FSK_FRAME_SYNCH1_PEAK2_POS, mesh_sync_peak2(mesh_syncword));
++    } else if ((public == false) || (lora_service_sf == DR_LORA_SF5) || (lora_service_sf == DR_LORA_SF6)) {
+         DEBUG_PRINTF("INFO: configuring LoRa (Service) SF%u with syncword PRIVATE (0x12)\n", lora_service_sf);
+         err |= lgw_reg_w(SX1302_REG_RX_TOP_LORA_SERVICE_FSK_FRAME_SYNCH0_PEAK1_POS, 2);
+         err |= lgw_reg_w(SX1302_REG_RX_TOP_LORA_SERVICE_FSK_FRAME_SYNCH1_PEAK2_POS, 4);
+@@ -2395,7 +2415,7 @@ int sx1302_tx_configure(lgw_radio_type_t radio_type) {
+ 
+ /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+ 
+-int sx1302_send(lgw_radio_type_t radio_type, struct lgw_tx_gain_lut_s * tx_lut, bool lwan_public, struct lgw_conf_rxif_s * context_fsk, struct lgw_pkt_tx_s * pkt_data) {
++int sx1302_send(lgw_radio_type_t radio_type, struct lgw_tx_gain_lut_s * tx_lut, bool lwan_public, uint8_t mesh_syncword, struct lgw_conf_rxif_s * context_fsk, struct lgw_pkt_tx_s * pkt_data) {
+     int err;
+     uint32_t freq_reg, fdev_reg;
+     uint32_t freq_dev;
+@@ -2596,7 +2616,14 @@ int sx1302_send(lgw_radio_type_t radio_type, struct lgw_tx_gain_lut_s * tx_lut,
+             CHECK_ERR(err);
+ 
+             /* Syncword */
+-            if ((lwan_public == false) || (pkt_data->datarate == DR_LORA_SF5) || (pkt_data->datarate == DR_LORA_SF6)) {
++            /* Neon: LoRaWAN downlinks use inverted polarity; mesh traffic does not */
++            if ((mesh_syncword != 0) && (pkt_data->invert_pol == false)) {
++                DEBUG_PRINTF("Setting LoRa mesh syncword 0x%02X\n", mesh_syncword);
++                err = lgw_reg_w(SX1302_REG_TX_TOP_FRAME_SYNCH_0_PEAK1_POS(pkt_data->rf_chain), mesh_sync_peak1(mesh_syncword));
++                CHECK_ERR(err);
++                err = lgw_reg_w(SX1302_REG_TX_TOP_FRAME_SYNCH_1_PEAK2_POS(pkt_data->rf_chain), mesh_sync_peak2(mesh_syncword));
++                CHECK_ERR(err);
++            } else if ((lwan_public == false) || (pkt_data->datarate == DR_LORA_SF5) || (pkt_data->datarate == DR_LORA_SF6)) {
+                 DEBUG_MSG("Setting LoRa syncword 0x12\n");
+                 err = lgw_reg_w(SX1302_REG_TX_TOP_FRAME_SYNCH_0_PEAK1_POS(pkt_data->rf_chain), 2);
+                 CHECK_ERR(err);
+diff --git a/libloragw/tst/test_loragw_hal_rx.c b/libloragw/tst/test_loragw_hal_rx.c
+index 65c896d..232b872 100644
+--- a/libloragw/tst/test_loragw_hal_rx.c
++++ b/libloragw/tst/test_loragw_hal_rx.c
+@@ -111,7 +111,7 @@ int main(int argc, char **argv)
+     float rssi_offset = 0.0;
+     bool full_duplex = false;
+ 
+-    struct lgw_conf_board_s boardconf;
++    struct lgw_conf_board_s boardconf = {0};
+     struct lgw_conf_rxrf_s rfconf;
+     struct lgw_conf_rxif_s ifconf;
+ 
+diff --git a/libloragw/tst/test_loragw_hal_tx.c b/libloragw/tst/test_loragw_hal_tx.c
+index f9f2757..d7137ee 100644
+--- a/libloragw/tst/test_loragw_hal_tx.c
++++ b/libloragw/tst/test_loragw_hal_tx.c
+@@ -142,7 +142,7 @@ int main(int argc, char **argv)
+     bool single_input_mode = false;
+     bool full_duplex = false;
+ 
+-    struct lgw_conf_board_s boardconf;
++    struct lgw_conf_board_s boardconf = {0};
+     struct lgw_conf_rxrf_s rfconf;
+     struct lgw_pkt_tx_s pkt;
+     struct lgw_tx_gain_lut_s txlut; /* TX gain table */
+diff --git a/libloragw/tst/test_loragw_sx1261_rssi.c b/libloragw/tst/test_loragw_sx1261_rssi.c
+index 4be6748..7a95287 100644
+--- a/libloragw/tst/test_loragw_sx1261_rssi.c
++++ b/libloragw/tst/test_loragw_sx1261_rssi.c
+@@ -90,7 +90,7 @@ int main(int argc, char ** argv)
+     const char sx1261_path_default[] = SX1261_PATH_DEFAULT;
+     const char * sx1261_path = sx1261_path_default;
+ 
+-    struct lgw_conf_board_s boardconf;
++    struct lgw_conf_board_s boardconf = {0};
+     struct lgw_conf_rxrf_s rfconf;
+ 
+     /* Parse command line options */
+diff --git a/packet_forwarder/src/lora_pkt_fwd.c b/packet_forwarder/src/lora_pkt_fwd.c
+index 53661de..4716b90 100644
+--- a/packet_forwarder/src/lora_pkt_fwd.c
++++ b/packet_forwarder/src/lora_pkt_fwd.c
+@@ -410,6 +410,28 @@ static int parse_SX130x_configuration(const char * conf_file) {
+         MSG("WARNING: Data type for full_duplex seems wrong, please check\n");
+         boardconf.full_duplex = false;
+     }
++    /* Neon: optional mesh syncword, as a number (43) or a hex string ("0x2B") */
++    boardconf.mesh_syncword = 0;
++    val = json_object_get_value(conf_obj, "mesh_syncword"); /* fetch value (if possible) */
++    if (json_value_get_type(val) == JSONNumber) {
++        boardconf.mesh_syncword = (uint8_t)json_value_get_number(val);
++    } else if (json_value_get_type(val) == JSONString) {
++        boardconf.mesh_syncword = (uint8_t)strtoul(json_value_get_string(val), NULL, 0);
++    } else if (val != NULL) {
++        MSG("WARNING: Data type for mesh_syncword seems wrong, please check\n");
++    }
++    if (boardconf.mesh_syncword != 0) {
++        MSG("INFO: mesh syncword 0x%02X on LoRa service channel and non-inverted TX\n", boardconf.mesh_syncword);
++    }
++    /* Neon: optional preamble length the LoRa service channel expects (Meshtastic: 16) */
++    boardconf.mesh_preamble = 0;
++    val = json_object_get_value(conf_obj, "mesh_preamble"); /* fetch value (if possible) */
++    if (json_value_get_type(val) == JSONNumber) {
++        boardconf.mesh_preamble = (uint16_t)json_value_get_number(val);
++        MSG("INFO: LoRa service channel expects %u preamble symbols\n", boardconf.mesh_preamble);
++    } else if (val != NULL) {
++        MSG("WARNING: Data type for mesh_preamble seems wrong, please check\n");
++    }
+     MSG("INFO: com_type %s, com_path %s, lorawan_public %d, clksrc %d, full_duplex %d\n", (boardconf.com_type == LGW_COM_SPI) ? "SPI" : "USB", boardconf.com_path, boardconf.lorawan_public, boardconf.clksrc, boardconf.full_duplex);
+     /* all parameters parsed, submitting configuration to the HAL */
+     if (lgw_board_setconf(&boardconf) != LGW_HAL_SUCCESS) {

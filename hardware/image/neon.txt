@@ -1,0 +1,28 @@
+# Neon station settings for the first boot. Edit before the first start (the card's boot
+# partition opens on any computer). The station installs itself on first boot and writes
+# the outcome to neon-status.txt next to this file. KEY=VALUE, one per line.
+
+# The atom's name on your network: the panel opens at http://<name>.local, and its setup
+# hotspot is called Neon-Setup-<name without "neon-"> until the panel's setup page is done,
+# then Neon-<name without "neon-">. Lowercase letters, digits and
+# hyphens, e.g. neon-garden. Empty: neon-XXXX (the last 4 hex digits of its network
+# address), or the hostname set in Raspberry Pi Imager. neon-status.txt says it from the
+# first minute.
+NEON_NAME=
+
+# EU868 or US915.
+NEON_REGION=EU868
+
+# The local mesh's Meshtastic preset, e.g. LongFast, MediumFast, ShortFast.
+NEON_PRESET=LongFast
+
+# rak-v2 (RAK Hotspot V2) or nebra-rockpi4 (see hardware/devices/).
+NEON_DEVICE=rak-v2
+
+# Wi-Fi, if the station has no network cable (or set it in Raspberry Pi Imager instead).
+# The country is required for Wi-Fi: two letters, e.g. PL, DE, GB, US. The password is
+# 8 to 63 characters, or the network's raw key as 64 hex digits (WPA2); it is removed from
+# this file once the station is installed.
+NEON_WIFI_COUNTRY=
+NEON_WIFI_SSID=
+NEON_WIFI_PASSWORD=

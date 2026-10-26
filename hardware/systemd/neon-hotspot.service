@@ -1,0 +1,12 @@
+[Unit]
+Description=Neon setup hotspot (when the station has no network)
+After=NetworkManager.service
+Wants=NetworkManager.service
+
+[Service]
+ExecStart=/opt/neon/neon-hotspot.sh
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

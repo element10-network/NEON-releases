@@ -1,0 +1,16 @@
+[Unit]
+Description=Neon weekly token epoch (compute, check, post, publish)
+After=network-online.target neond.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# As the hub user that built neon-token and neon-oracle and holds the admin key, not root: root
+# running programs and settings that user can change would hand it root. It needs to write only
+# reports/epochs (sudo chown -R ne: /var/lib/neon/reports/epochs); it reads the day logs.
+User=ne
+Group=ne
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ExecStart=/bin/sh /opt/neon/neon-epoch.sh
