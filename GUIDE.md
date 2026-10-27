@@ -39,6 +39,8 @@ A printable sheet to keep with the atom (setup in short and a test checklist): [
 
 - **Atom** page: photons today and this week, and **Claim NEON** once an epoch is out (weekly).
 - **Plasma** page: messages with other operators, the # Earth channel, photos, voice notes and GIFs.
+- **Community** page: votes on what the network should do. Each atom with a hotspot chip has one vote, and
+  can open a vote of its own. Votes are public.
 - **Meshtastic** page: what your atom hears on the radio.
 - **Updates install by themselves** at night (03:00 to 05:00 UTC). You can turn that off under
   **Settings → Updates**, and install by hand there.
