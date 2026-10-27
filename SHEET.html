@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Neon atom: tester sheet</title>
+<!-- The sheet that goes with a tester's atom: two A4 pages, printed on both sides (or two sheets).
+     Black on white; the boxes are written in by hand. The full guide: GUIDE.md (the QR code). -->
+<style>
+  @page { size: A4; margin: 14mm 15mm; }
+  * { box-sizing: border-box; }
+  html { background: #e9ebee; }
+  body { margin: 0; color: #111; font: 9.7pt/1.36 system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+         -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  /* On screen: the pages as sheets of paper. */
+  .page { width: 210mm; min-height: 297mm; margin: 10mm auto; padding: 14mm 15mm; background: #fff;
+          box-shadow: 0 1px 6px rgba(0,0,0,.18); display: flex; flex-direction: column; gap: 3.4mm; }
+  @media print {
+    html { background: none; }
+    .page { width: auto; min-height: 267mm; margin: 0; padding: 0; box-shadow: none; break-after: page; }
+    .page:last-child { break-after: auto; }
+  }
+  @media screen and (max-width: 220mm) {
+    .page { width: auto; min-height: 0; margin: 0 0 4mm; padding: 16px; }
+  }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 6mm;
+           border-bottom: 1.4pt solid #111; padding-bottom: 3mm; }
+  header .logo { height: 9mm; width: auto; display: block; }
+  header .logo path:not([class="logo-1"]) { fill: #111; }
+  header .logo .logo-1 { fill: #e8402a; }
+  header .what { text-align: right; font-size: 9pt; color: #444; }
+  header .what b { display: block; font-size: 12pt; color: #111; }
+  h1 { font-size: 15pt; margin: 0; letter-spacing: -.1pt; }
+  h2 { font-size: 11.5pt; margin: 0 0 1.6mm; display: flex; align-items: baseline; gap: 2.4mm; }
+  h2 .n { display: inline-grid; place-items: center; width: 6mm; height: 6mm; border-radius: 50%;
+          background: #111; color: #fff; font-size: 9.5pt; flex: none; transform: translateY(-.4mm); }
+  p { margin: 0 0 1.6mm; }
+  ol, ul { margin: 0; padding-left: 5mm; }
+  li { margin: 0 0 .7mm; }
+  li::marker { font-weight: 600; }
+  b { font-weight: 650; }
+  code, .addr { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: .94em; }
+  .lead { font-size: 10pt; color: #222; }
+  .warn { border-left: 1.4mm solid #e8402a; padding: 1.4mm 0 1.4mm 3mm; background: #fbeeec; }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 5mm; }
+  section { break-inside: avoid; }
+  /* The boxes filled in by hand. */
+  .card { border: 1pt solid #111; border-radius: 2.4mm; padding: 3.4mm 4mm; }
+  .fill { display: grid; grid-template-columns: auto 1fr; gap: 2.2mm 3mm; align-items: end; }
+  .fill .k { font-size: 9pt; color: #333; white-space: nowrap; }
+  .fill .v { border-bottom: .8pt solid #555; min-height: 5.8mm; font-family: ui-monospace, Menlo, Consolas, monospace; }
+  .fill .v.pre { color: #777; }
+  .fill-wrap { display: grid; grid-template-columns: 1fr auto; gap: 5mm; align-items: center; }
+  .qr-box { text-align: center; font-size: 8pt; color: #333; width: 27mm; }
+  .qr { width: 25mm; height: 25mm; display: block; margin: 0 auto 1.4mm; }
+  .qr path { fill: #111; }
+  /* The test checklist. */
+  .check { list-style: none; padding: 0; margin: 0; display: grid; gap: 1.8mm; }
+  .check li { display: grid; grid-template-columns: 4.6mm 1fr auto; gap: 2.4mm; align-items: start; margin: 0; }
+  .check li::before { content: ""; width: 4.2mm; height: 4.2mm; border: .9pt solid #111; border-radius: .8mm; margin-top: .5mm; }
+  .check .when { font-size: 8.4pt; color: #555; white-space: nowrap; }
+  .lines { display: grid; gap: 0; }
+  .lines span { border-bottom: .7pt solid #999; height: 7mm; }
+  .small { font-size: 8.8pt; color: #333; }
+  footer { margin-top: auto; border-top: .7pt solid #999; padding-top: 2.4mm; font-size: 8.6pt; color: #444;
+           display: flex; justify-content: space-between; gap: 4mm; flex-wrap: wrap; }
+  @media screen and (max-width: 220mm) { .cols, .fill-wrap { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+
+<div class="page">
+  <header>
+    <svg class="logo" role="img" aria-label="NEON" xmlns="http://www.w3.org/2000/svg" version="1.1" viewBox="0 0 405.18 125.05">
+  <path d="M80.03,125.05c-5.52,0-10-4.48-10-10V45.02s-.13-6.99-3.57-13.53c-4.07-7.73-11.08-11.49-21.44-11.49s-17.37,3.76-21.44,11.49c-3.44,6.54-3.57,13.52-3.57,13.59v69.97c0,5.52-4.48,10-10,10S0,120.57,0,115.05V45.02c0-1.14.15-11.42,5.43-21.98C12.86,8.18,26.92,0,45.02,0s32.16,8.18,39.58,23.04c5.28,10.56,5.43,20.84,5.43,21.98v70.03c0,5.52-4.48,10-10,10Z" class="logo-1"/>
+  <path d="M150.06,125.05c-1.14,0-11.42-.15-21.98-5.43-14.85-7.43-23.04-21.49-23.04-39.58v-35.02c0-1.14.15-11.42,5.43-21.98C117.91,8.18,131.97,0,150.06,0s32.16,8.18,39.58,23.04c5.28,10.56,5.43,20.84,5.43,21.98s-.15,11.42-5.43,21.98c-7.43,14.85-21.49,23.04-39.58,23.04-5.52,0-10-4.48-10-10s4.48-10,10-10c10.36,0,17.37-3.76,21.44-11.49,3.27-6.2,3.55-12.81,3.57-13.53-.02-.72-.31-7.32-3.57-13.53-4.07-7.73-11.08-11.49-21.44-11.49s-17.37,3.76-21.44,11.49c-3.44,6.54-3.57,13.52-3.57,13.59v34.95c0,10.36,3.76,17.37,11.49,21.44,6.54,3.44,13.52,3.57,13.59,3.57,5.52,0,9.97,4.48,9.97,10s-4.51,10-10.03,10Z" class="logo-1"/>
+  <path d="M255.11,125.05c-18.1,0-32.16-8.18-39.58-23.04-5.28-10.56-5.43-20.84-5.43-21.98v-35.02c0-1.14.15-11.42,5.43-21.98,7.43-14.86,21.49-23.04,39.58-23.04s32.16,8.18,39.58,23.04c5.28,10.56,5.43,20.84,5.43,21.98v35.02c0,1.14-.15,11.42-5.43,21.98-7.43,14.86-21.49,23.04-39.58,23.04ZM230.1,45.07v34.97s.13,6.99,3.57,13.53c4.07,7.73,11.08,11.49,21.44,11.49s17.37-3.76,21.44-11.49c3.44-6.54,3.57-13.52,3.57-13.59v-34.95s-.13-6.99-3.57-13.53c-4.07-7.73-11.08-11.49-21.44-11.49s-17.37,3.76-21.44,11.49c-3.37,6.4-3.56,13.22-3.57,13.58Z" class="logo-1"/>
+  <path d="M395.18,125.05c-5.52,0-10-4.48-10-10V45.02s-.13-6.99-3.57-13.53c-4.07-7.73-11.08-11.49-21.44-11.49s-17.37,3.76-21.44,11.49c-3.44,6.54-3.57,13.52-3.57,13.59v69.97c0,5.52-4.48,10-10,10s-10-4.48-10-10V45.02c0-1.14.15-11.42,5.43-21.98,7.43-14.86,21.49-23.04,39.58-23.04s32.16,8.18,39.58,23.04c5.28,10.56,5.43,20.84,5.43,21.98v70.03c0,5.52-4.48,10-10,10Z" class="logo-1"/>
+  <circle cx="185.08" cy="115.05" r="10" class="logo-2"/>
+</svg>
+    <div class="what"><b>Your Neon atom</b>Test unit · keep this sheet with it</div>
+  </header>
+
+  <div class="fill-wrap">
+    <div class="card fill">
+      <span class="k">Atom name</span><span class="v"></span>
+      <span class="k">Panel address</span><span class="v pre">http://neon-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;.local</span>
+      <span class="k">Modem preset</span><span class="v"></span>
+      <span class="k">Tester</span><span class="v"></span>
+      <span class="k">Handed over</span><span class="v pre">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/ 20</span>
+    </div>
+    <div class="qr-box"><svg class="qr" viewBox="0 0 37 37" role="img" aria-label="QR code: the testers' guide"><path d="M0,0h1v1h-1zM1,0h1v1h-1zM2,0h1v1h-1zM3,0h1v1h-1zM4,0h1v1h-1zM5,0h1v1h-1zM6,0h1v1h-1zM8,0h1v1h-1zM9,0h1v1h-1zM13,0h1v1h-1zM15,0h1v1h-1zM16,0h1v1h-1zM18,0h1v1h-1zM19,0h1v1h-1zM22,0h1v1h-1zM25,0h1v1h-1zM26,0h1v1h-1zM30,0h1v1h-1zM31,0h1v1h-1zM32,0h1v1h-1zM33,0h1v1h-1zM34,0h1v1h-1zM35,0h1v1h-1zM36,0h1v1h-1zM0,1h1v1h-1zM6,1h1v1h-1zM9,1h1v1h-1zM10,1h1v1h-1zM11,1h1v1h-1zM12,1h1v1h-1zM13,1h1v1h-1zM17,1h1v1h-1zM18,1h1v1h-1zM19,1h1v1h-1zM21,1h1v1h-1zM22,1h1v1h-1zM25,1h1v1h-1zM28,1h1v1h-1zM30,1h1v1h-1zM36,1h1v1h-1zM0,2h1v1h-1zM2,2h1v1h-1zM3,2h1v1h-1zM4,2h1v1h-1zM6,2h1v1h-1zM8,2h1v1h-1zM9,2h1v1h-1zM10,2h1v1h-1zM11,2h1v1h-1zM13,2h1v1h-1zM15,2h1v1h-1zM16,2h1v1h-1zM17,2h1v1h-1zM21,2h1v1h-1zM22,2h1v1h-1zM25,2h1v1h-1zM27,2h1v1h-1zM28,2h1v1h-1zM30,2h1v1h-1zM32,2h1v1h-1zM33,2h1v1h-1zM34,2h1v1h-1zM36,2h1v1h-1zM0,3h1v1h-1zM2,3h1v1h-1zM3,3h1v1h-1zM4,3h1v1h-1zM6,3h1v1h-1zM10,3h1v1h-1zM11,3h1v1h-1zM12,3h1v1h-1zM13,3h1v1h-1zM15,3h1v1h-1zM17,3h1v1h-1zM18,3h1v1h-1zM19,3h1v1h-1zM21,3h1v1h-1zM22,3h1v1h-1zM23,3h1v1h-1zM25,3h1v1h-1zM26,3h1v1h-1zM30,3h1v1h-1zM32,3h1v1h-1zM33,3h1v1h-1zM34,3h1v1h-1zM36,3h1v1h-1zM0,4h1v1h-1zM2,4h1v1h-1zM3,4h1v1h-1zM4,4h1v1h-1zM6,4h1v1h-1zM9,4h1v1h-1zM10,4h1v1h-1zM11,4h1v1h-1zM14,4h1v1h-1zM16,4h1v1h-1zM17,4h1v1h-1zM26,4h1v1h-1zM30,4h1v1h-1zM32,4h1v1h-1zM33,4h1v1h-1zM34,4h1v1h-1zM36,4h1v1h-1zM0,5h1v1h-1zM6,5h1v1h-1zM8,5h1v1h-1zM9,5h1v1h-1zM12,5h1v1h-1zM13,5h1v1h-1zM15,5h1v1h-1zM20,5h1v1h-1zM22,5h1v1h-1zM24,5h1v1h-1zM30,5h1v1h-1zM36,5h1v1h-1zM0,6h1v1h-1zM1,6h1v1h-1zM2,6h1v1h-1zM3,6h1v1h-1zM4,6h1v1h-1zM5,6h1v1h-1zM6,6h1v1h-1zM8,6h1v1h-1zM10,6h1v1h-1zM12,6h1v1h-1zM14,6h1v1h-1zM16,6h1v1h-1zM18,6h1v1h-1zM20,6h1v1h-1zM22,6h1v1h-1zM24,6h1v1h-1zM26,6h1v1h-1zM28,6h1v1h-1zM30,6h1v1h-1zM31,6h1v1h-1zM32,6h1v1h-1zM33,6h1v1h-1zM34,6h1v1h-1zM35,6h1v1h-1zM36,6h1v1h-1zM11,7h1v1h-1zM12,7h1v1h-1zM15,7h1v1h-1zM18,7h1v1h-1zM19,7h1v1h-1zM20,7h1v1h-1zM22,7h1v1h-1zM24,7h1v1h-1zM26,7h1v1h-1zM27,7h1v1h-1zM28,7h1v1h-1zM0,8h1v1h-1zM2,8h1v1h-1zM6,8h1v1h-1zM7,8h1v1h-1zM10,8h1v1h-1zM13,8h1v1h-1zM14,8h1v1h-1zM15,8h1v1h-1zM16,8h1v1h-1zM17,8h1v1h-1zM18,8h1v1h-1zM19,8h1v1h-1zM23,8h1v1h-1zM24,8h1v1h-1zM28,8h1v1h-1zM31,8h1v1h-1zM34,8h1v1h-1zM36,8h1v1h-1zM1,9h1v1h-1zM2,9h1v1h-1zM3,9h1v1h-1zM7,9h1v1h-1zM8,9h1v1h-1zM9,9h1v1h-1zM10,9h1v1h-1zM11,9h1v1h-1zM12,9h1v1h-1zM13,9h1v1h-1zM14,9h1v1h-1zM16,9h1v1h-1zM18,9h1v1h-1zM23,9h1v1h-1zM25,9h1v1h-1zM27,9h1v1h-1zM28,9h1v1h-1zM30,9h1v1h-1zM31,9h1v1h-1zM33,9h1v1h-1zM34,9h1v1h-1zM35,9h1v1h-1zM36,9h1v1h-1zM2,10h1v1h-1zM3,10h1v1h-1zM6,10h1v1h-1zM7,10h1v1h-1zM8,10h1v1h-1zM9,10h1v1h-1zM12,10h1v1h-1zM13,10h1v1h-1zM16,10h1v1h-1zM18,10h1v1h-1zM19,10h1v1h-1zM21,10h1v1h-1zM23,10h1v1h-1zM27,10h1v1h-1zM30,10h1v1h-1zM33,10h1v1h-1zM34,10h1v1h-1zM36,10h1v1h-1zM1,11h1v1h-1zM2,11h1v1h-1zM3,11h1v1h-1zM5,11h1v1h-1zM7,11h1v1h-1zM8,11h1v1h-1zM12,11h1v1h-1zM14,11h1v1h-1zM15,11h1v1h-1zM16,11h1v1h-1zM24,11h1v1h-1zM26,11h1v1h-1zM28,11h1v1h-1zM29,11h1v1h-1zM30,11h1v1h-1zM31,11h1v1h-1zM32,11h1v1h-1zM33,11h1v1h-1zM4,12h1v1h-1zM6,12h1v1h-1zM7,12h1v1h-1zM8,12h1v1h-1zM10,12h1v1h-1zM11,12h1v1h-1zM12,12h1v1h-1zM13,12h1v1h-1zM16,12h1v1h-1zM19,12h1v1h-1zM22,12h1v1h-1zM23,12h1v1h-1zM24,12h1v1h-1zM28,12h1v1h-1zM30,12h1v1h-1zM31,12h1v1h-1zM33,12h1v1h-1zM36,12h1v1h-1zM0,13h1v1h-1zM7,13h1v1h-1zM8,13h1v1h-1zM10,13h1v1h-1zM11,13h1v1h-1zM12,13h1v1h-1zM14,13h1v1h-1zM15,13h1v1h-1zM17,13h1v1h-1zM19,13h1v1h-1zM20,13h1v1h-1zM22,13h1v1h-1zM23,13h1v1h-1zM24,13h1v1h-1zM25,13h1v1h-1zM27,13h1v1h-1zM30,13h1v1h-1zM31,13h1v1h-1zM33,13h1v1h-1zM36,13h1v1h-1zM1,14h1v1h-1zM2,14h1v1h-1zM3,14h1v1h-1zM6,14h1v1h-1zM9,14h1v1h-1zM13,14h1v1h-1zM15,14h1v1h-1zM16,14h1v1h-1zM19,14h1v1h-1zM20,14h1v1h-1zM21,14h1v1h-1zM23,14h1v1h-1zM27,14h1v1h-1zM28,14h1v1h-1zM29,14h1v1h-1zM30,14h1v1h-1zM33,14h1v1h-1zM34,14h1v1h-1zM36,14h1v1h-1zM0,15h1v1h-1zM1,15h1v1h-1zM2,15h1v1h-1zM3,15h1v1h-1zM4,15h1v1h-1zM7,15h1v1h-1zM8,15h1v1h-1zM10,15h1v1h-1zM11,15h1v1h-1zM12,15h1v1h-1zM14,15h1v1h-1zM15,15h1v1h-1zM16,15h1v1h-1zM17,15h1v1h-1zM20,15h1v1h-1zM24,15h1v1h-1zM27,15h1v1h-1zM30,15h1v1h-1zM31,15h1v1h-1zM32,15h1v1h-1zM33,15h1v1h-1zM35,15h1v1h-1zM5,16h1v1h-1zM6,16h1v1h-1zM8,16h1v1h-1zM9,16h1v1h-1zM12,16h1v1h-1zM13,16h1v1h-1zM17,16h1v1h-1zM19,16h1v1h-1zM20,16h1v1h-1zM21,16h1v1h-1zM22,16h1v1h-1zM24,16h1v1h-1zM26,16h1v1h-1zM27,16h1v1h-1zM28,16h1v1h-1zM30,16h1v1h-1zM31,16h1v1h-1zM36,16h1v1h-1zM0,17h1v1h-1zM7,17h1v1h-1zM8,17h1v1h-1zM9,17h1v1h-1zM11,17h1v1h-1zM13,17h1v1h-1zM17,17h1v1h-1zM20,17h1v1h-1zM24,17h1v1h-1zM25,17h1v1h-1zM27,17h1v1h-1zM28,17h1v1h-1zM30,17h1v1h-1zM33,17h1v1h-1zM35,17h1v1h-1zM36,17h1v1h-1zM3,18h1v1h-1zM5,18h1v1h-1zM6,18h1v1h-1zM11,18h1v1h-1zM12,18h1v1h-1zM14,18h1v1h-1zM15,18h1v1h-1zM18,18h1v1h-1zM20,18h1v1h-1zM21,18h1v1h-1zM22,18h1v1h-1zM23,18h1v1h-1zM24,18h1v1h-1zM25,18h1v1h-1zM27,18h1v1h-1zM29,18h1v1h-1zM34,18h1v1h-1zM36,18h1v1h-1zM2,19h1v1h-1zM5,19h1v1h-1zM7,19h1v1h-1zM8,19h1v1h-1zM9,19h1v1h-1zM10,19h1v1h-1zM11,19h1v1h-1zM18,19h1v1h-1zM19,19h1v1h-1zM20,19h1v1h-1zM22,19h1v1h-1zM24,19h1v1h-1zM26,19h1v1h-1zM27,19h1v1h-1zM28,19h1v1h-1zM29,19h1v1h-1zM33,19h1v1h-1zM0,20h1v1h-1zM1,20h1v1h-1zM4,20h1v1h-1zM6,20h1v1h-1zM8,20h1v1h-1zM12,20h1v1h-1zM13,20h1v1h-1zM15,20h1v1h-1zM16,20h1v1h-1zM18,20h1v1h-1zM22,20h1v1h-1zM23,20h1v1h-1zM24,20h1v1h-1zM26,20h1v1h-1zM28,20h1v1h-1zM30,20h1v1h-1zM31,20h1v1h-1zM33,20h1v1h-1zM35,20h1v1h-1zM2,21h1v1h-1zM5,21h1v1h-1zM10,21h1v1h-1zM11,21h1v1h-1zM12,21h1v1h-1zM13,21h1v1h-1zM14,21h1v1h-1zM16,21h1v1h-1zM19,21h1v1h-1zM20,21h1v1h-1zM21,21h1v1h-1zM22,21h1v1h-1zM23,21h1v1h-1zM24,21h1v1h-1zM25,21h1v1h-1zM27,21h1v1h-1zM28,21h1v1h-1zM29,21h1v1h-1zM30,21h1v1h-1zM36,21h1v1h-1zM0,22h1v1h-1zM1,22h1v1h-1zM3,22h1v1h-1zM4,22h1v1h-1zM5,22h1v1h-1zM6,22h1v1h-1zM7,22h1v1h-1zM12,22h1v1h-1zM13,22h1v1h-1zM15,22h1v1h-1zM17,22h1v1h-1zM18,22h1v1h-1zM19,22h1v1h-1zM23,22h1v1h-1zM27,22h1v1h-1zM33,22h1v1h-1zM34,22h1v1h-1zM36,22h1v1h-1zM1,23h1v1h-1zM2,23h1v1h-1zM3,23h1v1h-1zM10,23h1v1h-1zM12,23h1v1h-1zM13,23h1v1h-1zM14,23h1v1h-1zM15,23h1v1h-1zM16,23h1v1h-1zM18,23h1v1h-1zM20,23h1v1h-1zM21,23h1v1h-1zM24,23h1v1h-1zM26,23h1v1h-1zM28,23h1v1h-1zM31,23h1v1h-1zM32,23h1v1h-1zM33,23h1v1h-1zM36,23h1v1h-1zM0,24h1v1h-1zM2,24h1v1h-1zM6,24h1v1h-1zM7,24h1v1h-1zM10,24h1v1h-1zM11,24h1v1h-1zM12,24h1v1h-1zM14,24h1v1h-1zM16,24h1v1h-1zM17,24h1v1h-1zM18,24h1v1h-1zM19,24h1v1h-1zM21,24h1v1h-1zM23,24h1v1h-1zM24,24h1v1h-1zM25,24h1v1h-1zM27,24h1v1h-1zM28,24h1v1h-1zM30,24h1v1h-1zM35,24h1v1h-1zM36,24h1v1h-1zM1,25h1v1h-1zM3,25h1v1h-1zM4,25h1v1h-1zM9,25h1v1h-1zM10,25h1v1h-1zM11,25h1v1h-1zM12,25h1v1h-1zM13,25h1v1h-1zM16,25h1v1h-1zM17,25h1v1h-1zM18,25h1v1h-1zM24,25h1v1h-1zM25,25h1v1h-1zM27,25h1v1h-1zM30,25h1v1h-1zM31,25h1v1h-1zM36,25h1v1h-1zM0,26h1v1h-1zM1,26h1v1h-1zM2,26h1v1h-1zM5,26h1v1h-1zM6,26h1v1h-1zM9,26h1v1h-1zM10,26h1v1h-1zM11,26h1v1h-1zM16,26h1v1h-1zM19,26h1v1h-1zM21,26h1v1h-1zM22,26h1v1h-1zM23,26h1v1h-1zM27,26h1v1h-1zM28,26h1v1h-1zM30,26h1v1h-1zM32,26h1v1h-1zM34,26h1v1h-1zM36,26h1v1h-1zM3,27h1v1h-1zM5,27h1v1h-1zM10,27h1v1h-1zM12,27h1v1h-1zM15,27h1v1h-1zM16,27h1v1h-1zM18,27h1v1h-1zM26,27h1v1h-1zM27,27h1v1h-1zM31,27h1v1h-1zM33,27h1v1h-1zM35,27h1v1h-1zM0,28h1v1h-1zM1,28h1v1h-1zM2,28h1v1h-1zM4,28h1v1h-1zM5,28h1v1h-1zM6,28h1v1h-1zM7,28h1v1h-1zM8,28h1v1h-1zM9,28h1v1h-1zM12,28h1v1h-1zM13,28h1v1h-1zM14,28h1v1h-1zM16,28h1v1h-1zM17,28h1v1h-1zM19,28h1v1h-1zM20,28h1v1h-1zM22,28h1v1h-1zM24,28h1v1h-1zM27,28h1v1h-1zM28,28h1v1h-1zM29,28h1v1h-1zM30,28h1v1h-1zM31,28h1v1h-1zM32,28h1v1h-1zM36,28h1v1h-1zM8,29h1v1h-1zM10,29h1v1h-1zM11,29h1v1h-1zM14,29h1v1h-1zM16,29h1v1h-1zM17,29h1v1h-1zM19,29h1v1h-1zM20,29h1v1h-1zM23,29h1v1h-1zM24,29h1v1h-1zM27,29h1v1h-1zM28,29h1v1h-1zM32,29h1v1h-1zM35,29h1v1h-1zM36,29h1v1h-1zM0,30h1v1h-1zM1,30h1v1h-1zM2,30h1v1h-1zM3,30h1v1h-1zM4,30h1v1h-1zM5,30h1v1h-1zM6,30h1v1h-1zM8,30h1v1h-1zM12,30h1v1h-1zM14,30h1v1h-1zM15,30h1v1h-1zM19,30h1v1h-1zM20,30h1v1h-1zM21,30h1v1h-1zM22,30h1v1h-1zM23,30h1v1h-1zM24,30h1v1h-1zM28,30h1v1h-1zM30,30h1v1h-1zM32,30h1v1h-1zM36,30h1v1h-1zM0,31h1v1h-1zM6,31h1v1h-1zM9,31h1v1h-1zM10,31h1v1h-1zM11,31h1v1h-1zM12,31h1v1h-1zM13,31h1v1h-1zM14,31h1v1h-1zM16,31h1v1h-1zM17,31h1v1h-1zM19,31h1v1h-1zM20,31h1v1h-1zM22,31h1v1h-1zM24,31h1v1h-1zM26,31h1v1h-1zM27,31h1v1h-1zM28,31h1v1h-1zM32,31h1v1h-1zM35,31h1v1h-1zM0,32h1v1h-1zM2,32h1v1h-1zM3,32h1v1h-1zM4,32h1v1h-1zM6,32h1v1h-1zM9,32h1v1h-1zM11,32h1v1h-1zM13,32h1v1h-1zM15,32h1v1h-1zM17,32h1v1h-1zM20,32h1v1h-1zM21,32h1v1h-1zM22,32h1v1h-1zM24,32h1v1h-1zM25,32h1v1h-1zM27,32h1v1h-1zM28,32h1v1h-1zM29,32h1v1h-1zM30,32h1v1h-1zM31,32h1v1h-1zM32,32h1v1h-1zM0,33h1v1h-1zM2,33h1v1h-1zM3,33h1v1h-1zM4,33h1v1h-1zM6,33h1v1h-1zM11,33h1v1h-1zM12,33h1v1h-1zM13,33h1v1h-1zM14,33h1v1h-1zM17,33h1v1h-1zM20,33h1v1h-1zM21,33h1v1h-1zM22,33h1v1h-1zM24,33h1v1h-1zM26,33h1v1h-1zM29,33h1v1h-1zM32,33h1v1h-1zM0,34h1v1h-1zM2,34h1v1h-1zM3,34h1v1h-1zM4,34h1v1h-1zM6,34h1v1h-1zM8,34h1v1h-1zM9,34h1v1h-1zM11,34h1v1h-1zM15,34h1v1h-1zM20,34h1v1h-1zM21,34h1v1h-1zM23,34h1v1h-1zM25,34h1v1h-1zM27,34h1v1h-1zM29,34h1v1h-1zM31,34h1v1h-1zM32,34h1v1h-1zM36,34h1v1h-1zM0,35h1v1h-1zM6,35h1v1h-1zM13,35h1v1h-1zM19,35h1v1h-1zM20,35h1v1h-1zM22,35h1v1h-1zM24,35h1v1h-1zM26,35h1v1h-1zM28,35h1v1h-1zM29,35h1v1h-1zM30,35h1v1h-1zM32,35h1v1h-1zM33,35h1v1h-1zM0,36h1v1h-1zM1,36h1v1h-1zM2,36h1v1h-1zM3,36h1v1h-1zM4,36h1v1h-1zM5,36h1v1h-1zM6,36h1v1h-1zM8,36h1v1h-1zM9,36h1v1h-1zM12,36h1v1h-1zM13,36h1v1h-1zM14,36h1v1h-1zM15,36h1v1h-1zM16,36h1v1h-1zM17,36h1v1h-1zM20,36h1v1h-1zM23,36h1v1h-1zM24,36h1v1h-1zM28,36h1v1h-1zM31,36h1v1h-1zM33,36h1v1h-1zM36,36h1v1h-1z"/></svg>The whole guide<br>(phone camera)</div>
+  </div>
+
+  <p class="lead">Thank you for testing the Neon Network. This box is a converted Helium hotspot, now an <b>atom</b>:
+    it hears the Meshtastic radios around it, passes their messages on and earns <b>photons</b> for the
+    coverage it gives; atoms talk to each other through the <b>Plasma</b>. A test network: things change, and the
+    NEON token is on Solana's test network (devnet).</p>
+
+  <section>
+    <h2><span class="n">1</span>Plug it in</h2>
+    <ol>
+      <li><b>Antenna first</b>, then the rest. A radio that runs without its antenna can be damaged.</li>
+      <li>A network cable to your router (best), then the power.</li>
+      <li>Wait about <b>10 minutes</b> the first time (up to 30 if it is freshly installed). Leave it alone meanwhile.</li>
+    </ol>
+    <p class="small" style="margin-top:1.6mm">No cable? After 2 minutes without a network the atom opens its own Wi-Fi,
+      <b>Neon-Setup-…</b>. Join it with your phone and a page opens by itself; under <b>Connect with</b> choose
+      <b>Wi-Fi</b>, then your home network. Afterwards put your phone back on your home Wi-Fi.</p>
+  </section>
+
+  <section>
+    <h2><span class="n">2</span>Set it up (one page)</h2>
+    <p>On a phone or computer on the same network, open the <b>panel address</b> above. If it does not open,
+      find the atom in your router's list of devices and open <code>http://ADDRESS:8080</code>.</p>
+    <ol>
+      <li><b>Network connection:</b> Cable or Wi-Fi.</li>
+      <li><b>Atom name:</b> how other operators see it.</li>
+      <li><b>Modem preset:</b> the one the Meshtastic users near you use. Ask your local Meshtastic group: it
+        often differs from one area to the next. With the wrong preset the atom hears nothing.</li>
+      <li><b>Panel password:</b> twice. Write it down somewhere safe (not on this sheet).</li>
+      <li><b>Transmit</b> and <b>Join the Neon network:</b> leave them on.</li>
+      <li><b>Payout wallet:</b> <b>Connect wallet</b> with a Solana wallet in your browser (Solflare or Phantom)
+        and sign the message. It is free: nothing is sent to the blockchain. Your photons go to this wallet.</li>
+      <li><b>Position:</b> drop the pin where the atom stands. Others see it rounded to about 1 km.</li>
+      <li><b>Save and start.</b> The atom restarts and asks for the password.</li>
+    </ol>
+  </section>
+
+  <div class="cols">
+    <section>
+      <h2><span class="n">3</span>Day to day</h2>
+      <ul>
+        <li><b>Atom:</b> photons today and this week; <b>Claim NEON</b> after each weekly epoch (Tuesdays).</li>
+        <li><b>Plasma:</b> messages with other operators and the <b style="white-space:nowrap"># Earth</b> channel.</li>
+        <li><b>Meshtastic:</b> what the atom hears on the radio.</li>
+        <li><b>Updates</b> install by themselves at night (03:00–05:00 UTC).</li>
+      </ul>
+    </section>
+    <section>
+      <h2><span class="n">4</span>Keep it running</h2>
+      <ul>
+        <li>Leave it on and online. When it is silent for 30 minutes, you get a message on the Plasma.</li>
+        <li>Outdoors or by a window, antenna upright: it hears more and earns more.</li>
+        <li>Unplugging is fine; it starts again by itself.</li>
+      </ul>
+    </section>
+  </div>
+
+  <footer><span>Questions, problems, screenshots: <b>neon-testers@enzyme42.com</b></span><span>element10.network</span></footer>
+</div>
+
+<div class="page">
+  <header>
+    <svg class="logo" role="img" aria-label="NEON" xmlns="http://www.w3.org/2000/svg" version="1.1" viewBox="0 0 405.18 125.05">
+  <path d="M80.03,125.05c-5.52,0-10-4.48-10-10V45.02s-.13-6.99-3.57-13.53c-4.07-7.73-11.08-11.49-21.44-11.49s-17.37,3.76-21.44,11.49c-3.44,6.54-3.57,13.52-3.57,13.59v69.97c0,5.52-4.48,10-10,10S0,120.57,0,115.05V45.02c0-1.14.15-11.42,5.43-21.98C12.86,8.18,26.92,0,45.02,0s32.16,8.18,39.58,23.04c5.28,10.56,5.43,20.84,5.43,21.98v70.03c0,5.52-4.48,10-10,10Z" class="logo-1"/>
+  <path d="M150.06,125.05c-1.14,0-11.42-.15-21.98-5.43-14.85-7.43-23.04-21.49-23.04-39.58v-35.02c0-1.14.15-11.42,5.43-21.98C117.91,8.18,131.97,0,150.06,0s32.16,8.18,39.58,23.04c5.28,10.56,5.43,20.84,5.43,21.98s-.15,11.42-5.43,21.98c-7.43,14.85-21.49,23.04-39.58,23.04-5.52,0-10-4.48-10-10s4.48-10,10-10c10.36,0,17.37-3.76,21.44-11.49,3.27-6.2,3.55-12.81,3.57-13.53-.02-.72-.31-7.32-3.57-13.53-4.07-7.73-11.08-11.49-21.44-11.49s-17.37,3.76-21.44,11.49c-3.44,6.54-3.57,13.52-3.57,13.59v34.95c0,10.36,3.76,17.37,11.49,21.44,6.54,3.44,13.52,3.57,13.59,3.57,5.52,0,9.97,4.48,9.97,10s-4.51,10-10.03,10Z" class="logo-1"/>
+  <path d="M255.11,125.05c-18.1,0-32.16-8.18-39.58-23.04-5.28-10.56-5.43-20.84-5.43-21.98v-35.02c0-1.14.15-11.42,5.43-21.98,7.43-14.86,21.49-23.04,39.58-23.04s32.16,8.18,39.58,23.04c5.28,10.56,5.43,20.84,5.43,21.98v35.02c0,1.14-.15,11.42-5.43,21.98-7.43,14.86-21.49,23.04-39.58,23.04ZM230.1,45.07v34.97s.13,6.99,3.57,13.53c4.07,7.73,11.08,11.49,21.44,11.49s17.37-3.76,21.44-11.49c3.44-6.54,3.57-13.52,3.57-13.59v-34.95s-.13-6.99-3.57-13.53c-4.07-7.73-11.08-11.49-21.44-11.49s-17.37,3.76-21.44,11.49c-3.37,6.4-3.56,13.22-3.57,13.58Z" class="logo-1"/>
+  <path d="M395.18,125.05c-5.52,0-10-4.48-10-10V45.02s-.13-6.99-3.57-13.53c-4.07-7.73-11.08-11.49-21.44-11.49s-17.37,3.76-21.44,11.49c-3.44,6.54-3.57,13.52-3.57,13.59v69.97c0,5.52-4.48,10-10,10s-10-4.48-10-10V45.02c0-1.14.15-11.42,5.43-21.98,7.43-14.86,21.49-23.04,39.58-23.04s32.16,8.18,39.58,23.04c5.28,10.56,5.43,20.84,5.43,21.98v70.03c0,5.52-4.48,10-10,10Z" class="logo-1"/>
+  <circle cx="185.08" cy="115.05" r="10" class="logo-2"/>
+</svg>
+    <div class="what"><b>Test checklist</b>Tick what works; note what does not</div>
+  </header>
+
+  <section class="card">
+    <ul class="check">
+      <li><span>The panel opens at the panel address, and the setup page saves.</span><span class="when">day 1</span></li>
+      <li><span>After the restart the password works and the <b>Atom</b> page shows.</span><span class="when">day 1</span></li>
+      <li><span>The bottom bar: the radio is running and the <b>Plasma</b> has peers (green dots).</span><span class="when">day 1</span></li>
+      <li><span>The <b>Meshtastic</b> page lists radios nearby (if there are Meshtastic users around).</span><span class="when">within a day</span></li>
+      <li><span>The payout wallet shows on the <b>Atom</b> page, and photons today go up.</span><span class="when">within a day</span></li>
+      <li><span>The atom is on the map (<b>Reach → Coverage map</b>) where you put it.</span><span class="when">within a day</span></li>
+      <li><span>A message in <b># Earth</b> (Plasma) arrives; someone answers.</span><span class="when">any time</span></li>
+      <li><span>An update installed overnight (the version at the bottom right changed).</span><span class="when">first week</span></li>
+      <li><span><b>Claim NEON</b> after the Tuesday epoch: the tokens arrive in your wallet.</span><span class="when">first Tuesday</span></li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Notes</h2>
+    <div class="lines"><span></span><span></span><span></span><span></span><span></span><span></span></div>
+  </section>
+
+  <div class="cols">
+    <section>
+      <h2>If something is wrong</h2>
+      <ul>
+        <li><b>No page:</b> wait 10 minutes after power-up, then try <code>http://ADDRESS:8080</code>.</li>
+        <li><b>Meshtastic stays empty</b> for an hour with users nearby: check the modem preset with your local
+          group (<b>Settings → Meshtastic → Radio</b>).</li>
+        <li><b>“Packet forwarder not sending”</b> at the bottom: restart with the round arrow at the top right,
+          or unplug the power for 10 seconds.</li>
+        <li><b>Forgot the password:</b> write to us.</li>
+        <li><b>Anything else:</b> a screenshot of the page to the address below.</li>
+      </ul>
+    </section>
+    <section>
+      <h2>What the atom shares</h2>
+      <ul>
+        <li><b>With the electrodes</b> (the network's servers): a fingerprint and the signal of the packets it
+          hears, not their contents; its position as you share it; its wallet.</li>
+        <li><b>With every atom:</b> its name, version, shared position, wallet, and your profile if you set one.</li>
+        <li>Direct messages between operators are end-to-end encrypted. Your password and wallet keys never leave
+          your devices.</li>
+      </ul>
+    </section>
+  </div>
+
+  <section class="warn small">
+    <b>Giving it back or passing it on:</b> with the atom online, <b>Settings → Reset atom</b>, type RESET and confirm.
+    It retires its key on the network and wipes your settings, messages, wallet and Wi-Fi. Then hand it over with this sheet.
+  </section>
+
+  <footer><span>Questions, problems, screenshots: <b>neon-testers@enzyme42.com</b></span><span>element10.network</span></footer>
+</div>
+
+</body>
+</html>

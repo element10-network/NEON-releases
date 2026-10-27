@@ -25,6 +25,8 @@
 #                              ECC608 earn (docs/DIRECTORY.md; the hub's onboarded.json in REPORTS,
 #                              kept by neond --hardware-from with the same date)
 #   FORCE=0                    1: compute even if the week is not over (tests only)
+#   NO_HUBS_OK=0               1: an empty hub registry is believed (tests, a network without
+#                              electrodes); otherwise an empty one stops the run
 set -eu
 export RUST_BACKTRACE=0
 CONF=${NEON_EPOCH_CONF:-/etc/neon/epoch.conf}
@@ -74,8 +76,8 @@ if [ "$N" -gt 0 ]; then
 fi
 # The hub registry. An empty answer may be the RPC's (devnet's public RPC sometimes lists no
 # accounts: epoch 0 was computed without the registered electrode, 2026-10-27), so it is asked
-# again before it is believed; and when the previous epoch had a registry, an empty one now
-# stops the run instead of computing an epoch in which no hub earns.
+# again, and an empty one stops the run instead of computing an epoch in which no hub earns (a
+# posted epoch cannot be changed); the timer tries again the next day. NO_HUBS_OK=1 believes it.
 has_hubs() { [ -n "$(tr -d ' \n{}' < "$WORK/hubs.json")" ]; }
 for try in 1 2 3; do
     tok hubs > "$WORK/hubs.json"
@@ -84,11 +86,11 @@ for try in 1 2 3; do
 done
 if has_hubs; then
     set -- "$@" --hubs "$WORK/hubs.json"
-elif [ -n "${PREV:-}" ] && python3 -c 'import json,sys; sys.exit(0 if json.load(open(sys.argv[1])).get("hubs") else 1)' "$PREV"; then
-    echo "the hub registry came back empty, but epoch $((N - 1)) had one: not computed (an RPC fault?). The timer tries again; or check: $NEON_TOKEN --url $URL hubs"
-    exit 1
+elif [ "${NO_HUBS_OK:-0}" = 1 ]; then
+    echo "no registered hubs on chain: every signed log counts, hubs earn nothing (NO_HUBS_OK=1)"
 else
-    echo "no registered hubs on chain: every signed log counts, hubs earn nothing"
+    echo "the hub registry came back empty three times: epoch $N not computed (an RPC fault? NO_HUBS_OK=1 in $CONF if there really are none). The timer tries again; or check: $NEON_TOKEN --url $URL hubs"
+    exit 1
 fi
 [ "${IGNORE_OPERATORS:-0}" = 1 ] && set -- "$@" --ignore-operators
 if [ -n "${HARDWARE_FROM:-}" ]; then

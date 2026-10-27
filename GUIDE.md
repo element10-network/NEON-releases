@@ -13,22 +13,27 @@ on the main Solana network yet.
 3. Wait 5 to 10 minutes the first time.
 
 No cable? After 2 minutes without a network the atom opens its own Wi-Fi called **Neon-Setup-…**. Join it
-with your phone: a page opens by itself. Choose your home Wi-Fi under **Wi-Fi → Connect**. The atom
+with your phone: a page opens by itself. Under **Connect with** choose **Wi-Fi**, then your home network. The atom
 joins it and the Neon-Setup network goes away; reconnect your phone to your home Wi-Fi.
 
 ## 2. Set it up
 
 1. On a computer or phone on the same network, open **http://neon-xxxx.local** (the name you were given;
    if it does not open, look up the atom's address in your router and open `http://ADDRESS:8080`).
-2. The setup page asks for the atom's name, the **modem preset** and a **panel password**. The preset
-   must be the one the Meshtastic users near you use: it often differs from region to region (in Poland
-   from one area to the next), so ask your local Meshtastic group. With the wrong one the atom hears
-   nothing. Save. The atom restarts and asks for the password. You can change the preset later under
-   **Settings → Meshtastic → Radio**.
-3. **Settings → Plasma → Payout:** **Connect wallet** (a Solana wallet such as Phantom or Solflare in
-   your browser) and sign the message it shows. The photons your atom earns go to that wallet.
-4. **Settings → Plasma → Position:** set where the atom is (or **Reach → Coverage map → Set atom position**).
-   The network map shows it rounded to about 1 km unless you choose otherwise.
+2. The setup page is one page: **Network connection** (Cable or Wi-Fi), the atom's **name**, the **modem
+   preset**, a **panel password**, then **Payout wallet** and **Position**. The preset must be the one the
+   Meshtastic users near you use: it often differs from region to region (in Poland from one area to the
+   next), so ask your local Meshtastic group. With the wrong one the atom hears nothing. You can change it
+   later under **Settings → Meshtastic → Radio**.
+3. **Payout wallet:** **Connect wallet** (a Solana wallet such as Solflare or Phantom in your browser) and
+   sign the message it shows (free: nothing is sent to the blockchain). The photons your atom earns go to
+   that wallet. Later: **Settings → Plasma → Payout**.
+4. **Position:** drop the pin where the atom stands. The network map shows it rounded to about 1 km unless
+   you choose otherwise. Later: **Settings → Plasma → Position** or **Reach → Coverage map**.
+5. **Save and start.** The atom restarts and asks for the password.
+
+A printable sheet to keep with the atom (setup in short and a test checklist): [SHEET.html](SHEET.html)
+(open it in a browser and print it on both sides of one A4 sheet).
 
 ## 3. Day to day
 
