@@ -24,6 +24,14 @@ NEON_DEVICE=rak-v2
 # 0: leave it out.
 NEON_HELIUM=
 
+# SSH, to follow the install and reach the atom from another computer (empty: off). A user name,
+# and a password hash made with: openssl passwd -6  (it starts with $6$; the password itself never
+# goes on the card, and the hash is removed from this file once installed), and/or a public key
+# (one line: ssh-ed25519 AAAA... you@computer). Then: ssh <user>@<name>.local
+NEON_SSH_USER=
+NEON_SSH_HASH=
+NEON_SSH_KEY=
+
 # Wi-Fi, if the station has no network cable (or set it in Raspberry Pi Imager instead).
 # The country is required for Wi-Fi: two letters, e.g. PL, DE, GB, US. The password is
 # 8 to 63 characters, or the network's raw key as 64 hex digits (WPA2); it is removed from

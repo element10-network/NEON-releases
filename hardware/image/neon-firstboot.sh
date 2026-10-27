@@ -99,6 +99,47 @@ if [ -n "$WIFI_SSID" ] && command -v nmcli >/dev/null; then
     done
 fi
 
+# SSH from neon.txt (owner, 2026-10-27): a user with a password hash (openssl passwd -6) and/or a
+# public key, and SSH on, before the install, so it can be followed from another computer. The
+# image has no user of its own. Empty: SSH stays as it is (off, unless Raspberry Pi Imager set it).
+SSH_USER=$(get NEON_SSH_USER) || exit 1
+SSH_HASH=$(raw NEON_SSH_HASH | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+SSH_KEY=$(raw NEON_SSH_KEY | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+if [ -n "$SSH_USER" ]; then
+    if ! printf '%s' "$SSH_USER" | grep -Eq '^[a-z_][a-z0-9_-]{0,31}$'; then
+        status "neon.txt: NEON_SSH_USER must be lowercase letters, digits, - and _ (at most 32): fix it and restart"
+        exit 1
+    fi
+    case "$SSH_HASH" in ''|'$6$'*|'$5$'*|'$y$'*) ;; *)
+        status "neon.txt: NEON_SSH_HASH must be a password hash from: openssl passwd -6 (it starts with \$6\$): fix it and restart"
+        exit 1 ;;
+    esac
+    case "$SSH_KEY" in ''|ssh-ed25519\ *|ssh-rsa\ *|ecdsa-sha2-*\ *|sk-ssh-ed25519@openssh.com\ *|sk-ecdsa-sha2-*\ *) ;; *)
+        status "neon.txt: NEON_SSH_KEY must be a public key line (ssh-ed25519 AAAA...): fix it and restart"
+        exit 1 ;;
+    esac
+    if [ -z "$SSH_HASH" ] && [ -z "$SSH_KEY" ]; then
+        status "neon.txt: NEON_SSH_USER needs NEON_SSH_HASH or NEON_SSH_KEY (else nobody could log in): fix it and restart"
+        exit 1
+    fi
+    id "$SSH_USER" >/dev/null 2>&1 || useradd -m -s /bin/bash -G sudo "$SSH_USER"
+    usermod -aG sudo "$SSH_USER"
+    [ -z "$SSH_HASH" ] || usermod -p "$SSH_HASH" "$SSH_USER"
+    if [ -n "$SSH_KEY" ]; then
+        home=$(getent passwd "$SSH_USER" | cut -d: -f6)
+        install -d -m 700 -o "$SSH_USER" -g "$SSH_USER" "$home/.ssh"
+        grep -qxF "$SSH_KEY" "$home/.ssh/authorized_keys" 2>/dev/null || printf '%s\n' "$SSH_KEY" >> "$home/.ssh/authorized_keys"
+        chown "$SSH_USER:$SSH_USER" "$home/.ssh/authorized_keys"; chmod 600 "$home/.ssh/authorized_keys"
+    fi
+    # With a key only there is no password for sudo: it asks for none (like the image's old pi user).
+    if [ -z "$SSH_HASH" ]; then
+        printf '%s ALL=(ALL) NOPASSWD: ALL\n' "$SSH_USER" > "/etc/sudoers.d/010-neon-$SSH_USER"
+        chmod 440 "/etc/sudoers.d/010-neon-$SSH_USER"
+    fi
+    systemctl enable --now ssh 2>/dev/null || systemctl enable --now sshd 2>/dev/null || true
+    echo "SSH on for $SSH_USER"
+fi
+
 status "waiting for the network"
 i=0
 until getent hosts api.github.com >/dev/null 2>&1; do
@@ -125,6 +166,7 @@ done
 touch "$DONE"
 # NetworkManager keeps the Wi-Fi password (root only); not on the card's open partition.
 sed -i 's/^\([[:space:]]*NEON_WIFI_PASSWORD[[:space:]]*=\).*/\1/' "$CONF"
+sed -i 's/^\([[:space:]]*NEON_SSH_HASH[[:space:]]*=\).*/\1/' "$CONF"
 IP=$(hostname -I 2>/dev/null | cut -d' ' -f1)
 status "done. Open http://$(hostname).local (or http://${IP:-<the station address>}:8080) to finish the setup"
 systemctl disable neon-firstboot.service 2>/dev/null || true
