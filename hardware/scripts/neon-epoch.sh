@@ -72,9 +72,21 @@ if [ "$N" -gt 0 ]; then
     [ -f "$PREV" ] || { echo "epoch $((N - 1))'s result is missing: $PREV"; exit 1; }
     set -- "$@" --previous "$PREV"
 fi
-tok hubs > "$WORK/hubs.json"
-if [ -n "$(tr -d ' \n{}' < "$WORK/hubs.json")" ]; then
+# The hub registry. An empty answer may be the RPC's (devnet's public RPC sometimes lists no
+# accounts: epoch 0 was computed without the registered electrode, 2026-10-27), so it is asked
+# again before it is believed; and when the previous epoch had a registry, an empty one now
+# stops the run instead of computing an epoch in which no hub earns.
+has_hubs() { [ -n "$(tr -d ' \n{}' < "$WORK/hubs.json")" ]; }
+for try in 1 2 3; do
+    tok hubs > "$WORK/hubs.json"
+    has_hubs && break
+    [ "$try" -lt 3 ] && sleep 20
+done
+if has_hubs; then
     set -- "$@" --hubs "$WORK/hubs.json"
+elif [ -n "${PREV:-}" ] && python3 -c 'import json,sys; sys.exit(0 if json.load(open(sys.argv[1])).get("hubs") else 1)' "$PREV"; then
+    echo "the hub registry came back empty, but epoch $((N - 1)) had one: not computed (an RPC fault?). The timer tries again; or check: $NEON_TOKEN --url $URL hubs"
+    exit 1
 else
     echo "no registered hubs on chain: every signed log counts, hubs earn nothing"
 fi
