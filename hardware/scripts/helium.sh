@@ -31,13 +31,20 @@ GW_DIR=/opt/helium_gateway
 CONF_DIR=/etc/helium_gateway
 UNIT=/etc/systemd/system/helium-gateway.service
 TOML=$PREFIX/neond.toml
+ENV=$PREFIX/neond.env
 LORAWAN=127.0.0.1:1680
 
 [ "$(id -u)" -eq 0 ] || die "run as root"
 [ $# -ge 1 ] || die "usage: $0 <device> [EU868|US915]   or   $0 --remove"
 
-# set_lorawan VALUE: neond's `lorawan` setting in neond.toml (empty: removed).
+# set_lorawan VALUE: neond's `lorawan` setting (empty: removed), in neond.toml and as the
+# starting value NEON_LORAWAN in neond.env (before the first-run setup there is no neond.toml;
+# the setup page then saves it there).
 set_lorawan() {
+    if [ -f "$ENV" ]; then
+        sed -i '/^NEON_LORAWAN=/d' "$ENV"
+        [ -z "$1" ] || echo "NEON_LORAWAN=$1" >> "$ENV"
+    fi
     [ -f "$TOML" ] || return 0
     sed -i '/^lorawan *=/d' "$TOML"
     # A last line without its newline would run into the new one.
@@ -54,11 +61,13 @@ if [ "$1" = "--remove" ]; then
     exit 0
 fi
 
-# The panel's first-run setup writes neond.toml (and its password): not skipped by this.
-[ -f "$TOML" ] || die "finish the station's first-run setup in its panel first (no $TOML yet)"
 # neond 0.4.23 and later know the setting; an older one would refuse its settings file.
 neond --help 2>/dev/null | grep -q -- '--lorawan' \
     || die "update the station to 0.4.23 or later first (panel: Settings → Updates)"
+# Before the first-run setup (no neond.toml: setup.sh runs this at install time) the setting
+# goes into neond.env, which only neond 0.4.126 and later read.
+[ -f "$TOML" ] || neond --help 2>/dev/null | grep -q NEON_LORAWAN \
+    || die "finish the station's first-run setup in its panel first (no $TOML yet)"
 
 DEVICE=$1
 REGION=${2:-EU868}

@@ -18,7 +18,11 @@
 # Options, as environment variables (put them after sudo: sudo NEON_PRESET=ShortFast sh):
 #   NEON_DEVICE   rak-v2 (default) | nebra-rockpi4      see hardware/devices/
 #   NEON_REGION   EU868 (default) | US915; a rerun keeps the installed one
-#   NEON_PRESET   the local mesh's Meshtastic preset (default LongFast; a rerun keeps the installed one)
+#   NEON_PRESET   the local mesh's Meshtastic preset (default LongFast; a rerun keeps the atom's,
+#                 as last set in the panel); the panel can change it later
+#   NEON_HELIUM   1 (default) | 0: on a hotspot with its ECC608 (rak-v2), install Helium's gateway
+#                 software with the hotspot's key (helium.sh): it signs the atom's key, which
+#                 photons need, and keeps the hotspot serving Helium sensors. Done once; 0 skips it
 #   NEON_REF      git branch or tag to install from (default main)
 #   NEON_SOURCE=1 build neond from the private source instead of downloading the release
 #   NEON_TOKEN    with NEON_SOURCE=1: GitHub token for the source (fine-grained, Contents: read-only)
@@ -27,9 +31,12 @@ set -eu
 export HOME="${HOME:-/root}"
 
 PREFIX=/opt/neon
-# A rerun keeps the station's region and preset (from neond.env) unless given again.
+# A rerun keeps the station's region and preset unless given again: the preset as the panel
+# saved it (neond.toml), else the install's (NEON_PRESET in neond.env, or --preset before 0.4.126).
 ENV_ARGS=$(sed -n 's/^NEOND_ARGS=//p' "$PREFIX/neond.env" 2>/dev/null || true)
-OLD_PRESET=$(printf '%s' "$ENV_ARGS" | sed -n 's/.*--preset \([A-Za-z]*\).*/\1/p')
+OLD_PRESET=$(sed -n 's/^preset *= *"\([A-Za-z]*\)".*/\1/p' "$PREFIX/neond.toml" 2>/dev/null | head -n 1 || true)
+[ -n "$OLD_PRESET" ] || OLD_PRESET=$(sed -n 's/^NEON_PRESET=\([A-Za-z]*\).*/\1/p' "$PREFIX/neond.env" 2>/dev/null | tail -n 1 || true)
+[ -n "$OLD_PRESET" ] || OLD_PRESET=$(printf '%s' "$ENV_ARGS" | sed -n 's/.*--preset \([A-Za-z]*\).*/\1/p')
 case "$(printf '%s' "$ENV_ARGS" | sed -n 's/.*--region \([A-Za-z0-9_]*\).*/\1/p')" in
     US) OLD_REGION=US915 ;;
     EU_868) OLD_REGION=EU868 ;;
@@ -102,6 +109,14 @@ if ! ls /dev/spidev* >/dev/null 2>&1 && command -v raspi-config >/dev/null; then
     raspi-config nonint do_spi 0 || true
     ls /dev/spidev* >/dev/null 2>&1 || die "SPI is still off: reboot, then run this again"
 fi
+# I2C too: the concentrator's temperature sensor (the SX1302 HAL does not start without it on
+# a RAK2287) and the ECC608 are on it. Raspberry Pi OS images leave it off.
+if ! ls /dev/i2c-* >/dev/null 2>&1 && command -v raspi-config >/dev/null; then
+    step "Turning I2C on"
+    raspi-config nonint do_i2c 0 || true
+    modprobe i2c-dev 2>/dev/null || true
+    ls /dev/i2c-* >/dev/null 2>&1 || die "I2C is still off: reboot, then run this again"
+fi
 
 # neond's region name (backbone topic, channel links) for the forwarder's region.
 case "$REGION" in
@@ -114,8 +129,10 @@ if [ ! -f "$PREFIX/neond.env" ]; then
     mkdir -p "$PREFIX"
     cat > "$PREFIX/neond.env" <<EOF
 # neond options. Settings made in the web panel are in $PREFIX/neond.toml;
-# options here override them (and are locked in the panel).
-NEOND_ARGS=--preset $PRESET --region $NEOND_REGION --web 0.0.0.0:8080
+# options in NEOND_ARGS override them (and are locked in the panel). NEON_PRESET is only the
+# starting preset: the panel can change it.
+NEON_PRESET=$PRESET
+NEOND_ARGS=--region $NEOND_REGION --web 0.0.0.0:8080
 EOF
 elif grep -q -- '--region ' "$PREFIX/neond.env"; then
     # A rerun (perhaps with another region): neond follows it (install.sh updates the preset).
@@ -217,6 +234,13 @@ else
     fi
 fi
 "$BIN" --version
+# A neond before 0.4.126 does not read NEON_PRESET (a newer setup.sh, as on the SD image, with
+# an older release): the preset goes on its command line, locked in the panel as before (a
+# rerun once neond reads it moves it out), or it would run LongFast.
+if ! "$BIN" --help 2>/dev/null | grep -q NEON_PRESET; then
+    grep -q -- '^NEOND_ARGS=.*--preset ' "$PREFIX/neond.env" ||
+        sed -i "s/^NEOND_ARGS=/NEOND_ARGS=--preset $PRESET /" "$PREFIX/neond.env"
+fi
 
 step "Local name and Wi-Fi setup"
 sh "$REPO/hardware/scripts/network.sh" || echo "local name / hotspot not set up (the panel still works by address)"
@@ -226,6 +250,16 @@ systemctl daemon-reload
 systemctl enable -q neon-forwarder neond
 systemctl restart neon-forwarder neond
 STOPPED=""
+
+# Helium's gateway software with the hotspot's own key (ECC608), once: without it the atom's
+# key is not chip-signed and earns no photons (docs/DIRECTORY.md). Not fatal: the atom works
+# without it, and helium.sh can be run again later. Kept off after `helium.sh --remove`.
+if [ "${NEON_HELIUM:-1}" != 0 ] && grep -q '^NEON_ECC_I2C_BUS=' "$REPO/hardware/devices/$DEVICE.env" \
+    && [ ! -f /etc/systemd/system/helium-gateway.service ]; then
+    step "Helium gateway (the hotspot's key signs the atom's)"
+    sh "$REPO/hardware/scripts/helium.sh" "$DEVICE" "$REGION" \
+        || echo "Helium gateway not set up; run later: sudo sh $REPO/hardware/scripts/helium.sh $DEVICE $REGION"
+fi
 
 IP=$(hostname -I 2>/dev/null | cut -d' ' -f1)
 cat <<EOF

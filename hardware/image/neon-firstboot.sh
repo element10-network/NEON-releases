@@ -28,13 +28,17 @@ status() {
 get() {
     v=$(sed -n "s/^[[:space:]]*$1[[:space:]]*=//p" "$CONF" 2>/dev/null | tail -n 1 | tr -d '\r' \
         | sed 's/[[:space:]]#.*$//; s/^[[:space:]]*//; s/[[:space:]]*$//')
-    if ! printf '%s' "$v" | grep -Eq '^[A-Za-z0-9_./:-]*$'; then
-        status "neon.txt: $1 has characters that are not allowed: fix it and restart"
-        exit 1
-    fi
+    # Not grep: it sees no line in an empty value (a key left empty or not in the file, which
+    # is allowed) and fails.
+    case "$v" in
+        *[!A-Za-z0-9_./:-]*)
+            status "neon.txt: $1 has characters that are not allowed: fix it and restart"
+            exit 1
+            ;;
+    esac
     printf '%s' "$v"
 }
-for k in NEON_REGION NEON_PRESET NEON_DEVICE NEON_REF; do
+for k in NEON_REGION NEON_PRESET NEON_DEVICE NEON_REF NEON_HELIUM; do
     v=$(get "$k") || exit 1
     if [ -n "$v" ]; then export "$k=$v"; fi
 done

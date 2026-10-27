@@ -20,8 +20,11 @@ joins it and the Neon-Setup network goes away; reconnect your phone to your home
 
 1. On a computer or phone on the same network, open **http://neon-xxxx.local** (the name you were given;
    if it does not open, look up the atom's address in your router and open `http://ADDRESS:8080`).
-2. The setup page asks for the atom's name, your name and a **panel password**. Save. The atom restarts
-   and asks for the password.
+2. The setup page asks for the atom's name, the **modem preset** and a **panel password**. The preset
+   must be the one the Meshtastic users near you use: it often differs from region to region (in Poland
+   from one area to the next), so ask your local Meshtastic group. With the wrong one the atom hears
+   nothing. Save. The atom restarts and asks for the password. You can change the preset later under
+   **Settings → Meshtastic → Radio**.
 3. **Settings → Plasma → Payout:** **Connect wallet** (a Solana wallet such as Phantom or Solflare in
    your browser) and sign the message it shows. The photons your atom earns go to that wallet.
 4. **Settings → Plasma → Position:** set where the atom is (or **Reach → Coverage map → Set atom position**).
@@ -59,6 +62,8 @@ network, wipes your settings, messages, wallet and Wi-Fi, and starts as new.
 ## If something is wrong
 
 - No page at `neon-xxxx.local`: wait 10 minutes after power-up, then try `http://ADDRESS:8080`.
+- The **Meshtastic** page stays empty for an hour although there are Meshtastic users nearby: check the
+  modem preset (**Settings → Meshtastic → Radio**) with your local group.
 - The bottom bar says the packet forwarder is not sending: restart the atom with the round arrow at the
   top right of the panel, or unplug the power for 10 seconds.
 - Anything else: send a screenshot of the page to **neon-testers@enzyme42.com**.

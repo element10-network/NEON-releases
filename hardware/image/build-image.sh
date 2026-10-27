@@ -1,5 +1,5 @@
 #!/bin/sh
-# Build a Neon station SD image: Raspberry Pi OS Lite (64-bit) with SPI on, the packages
+# Build a Neon station SD image: Raspberry Pi OS Lite (64-bit) with SPI and I2C on, the packages
 # setup.sh needs, and a first-boot service that installs the station (neon-firstboot).
 # Settings go in neon.txt on the card's boot partition (readable from any computer).
 #
@@ -82,9 +82,12 @@ chroot "$ROOT" sh -c 'apt-get update -q && DEBIAN_FRONTEND=noninteractive apt-ge
 rm -f "$ROOT/usr/sbin/policy-rc.d"
 if [ -f "$WORK/resolv.conf" ]; then cp "$WORK/resolv.conf" "$ROOT/etc/resolv.conf"; fi
 
-echo "==> SPI on, first-boot service, neon.txt"
+echo "==> SPI and I2C on, first-boot service, neon.txt"
 CFG=$ROOT/boot/firmware/config.txt
 grep -q '^dtparam=spi=on' "$CFG" || echo 'dtparam=spi=on' >> "$CFG"
+# I2C: the concentrator's temperature sensor (the SX1302 HAL needs it on a RAK2287) and the ECC608.
+grep -q '^dtparam=i2c_arm=on' "$CFG" || echo 'dtparam=i2c_arm=on' >> "$CFG"
+grep -qx 'i2c-dev' "$ROOT/etc/modules" 2>/dev/null || echo 'i2c-dev' >> "$ROOT/etc/modules"
 install -d "$ROOT/opt/neon/image"
 install -m 755 "$REPO/hardware/scripts/setup.sh" "$ROOT/opt/neon/image/setup.sh"
 install -m 755 "$HERE/neon-firstboot.sh" "$ROOT/usr/local/sbin/neon-firstboot"

@@ -19,6 +19,11 @@ NEON_PRESET=LongFast
 # rak-v2 (RAK Hotspot V2) or nebra-rockpi4 (see hardware/devices/).
 NEON_DEVICE=rak-v2
 
+# 1 (or empty): install Helium's gateway software with the hotspot's own key. Its chip then
+# signs the atom's key, which photons need, and the hotspot keeps serving Helium sensors.
+# 0: leave it out.
+NEON_HELIUM=
+
 # Wi-Fi, if the station has no network cable (or set it in Raspberry Pi Imager instead).
 # The country is required for Wi-Fi: two letters, e.g. PL, DE, GB, US. The password is
 # 8 to 63 characters, or the network's raw key as 64 hex digits (WPA2); it is removed from

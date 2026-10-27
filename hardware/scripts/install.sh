@@ -53,6 +53,11 @@ esac
 [ "$REGION" = EU868 ] || [ "$PRESET" = LongFast ] || die "only LongFast is supported for $REGION"
 [ "$(id -u)" -eq 0 ] || die "run as root"
 . "$ENV_FILE"
+# A device whose chip is known (NEON_CHIP in its profile) never falls back to the other HAL:
+# a chip that does not answer is a fault to fix (seating, reset line), not another chip.
+if [ "$CHIP" = auto ] && [ -n "${NEON_CHIP:-}" ]; then
+    CHIP=$NEON_CHIP
+fi
 if [ ! -e "$NEON_SPI" ]; then
     FIRST=$(ls /dev/spidev* 2>/dev/null | head -n 1)
     [ -n "$FIRST" ] || die "no SPI device found: enable SPI (see hardware/README.md)"
@@ -177,7 +182,7 @@ if [ "$CHIP" != sx1301 ]; then
         echo "Run hardware/scripts/probe_concentrator.py to identify the chip, SPI device and reset GPIO." >&2
     fi
     if [ "$CHIP" = sx1302 ] && [ -z "$EUI" ]; then
-        die "no SX1302 answered on any SPI device"
+        die "no SX1302 answered on any SPI device: is the radio board pressed fully onto the 40-pin header? (chip_id's output is above)"
     elif [ "$CHIP" = auto ]; then
         echo "No SX1302 answered on any SPI device; building the SX1301 HAL for $NEON_SPI"
         CHIP=sx1301
@@ -223,10 +228,17 @@ install -m 755 "$HW/scripts/update-guard.sh" "$PREFIX/update-guard.sh"
 if [ ! -f "$PREFIX/neond.env" ]; then
     cp "$HW/systemd/neond.env.$REGION" "$PREFIX/neond.env"
 fi
-# Keep neond on the same preset as the forwarder. Its default channel is named after the preset.
-sed -i "s|--preset [A-Za-z]*|--preset $PRESET|g" "$PREFIX/neond.env"
-if grep -q -- "--channel" "$PREFIX/neond.env"; then
-    echo "NOTE: $PREFIX/neond.env sets --channel. For the default $PRESET channel, remove it (neond derives it from --preset)."
+# Keep neond on the same preset as the forwarder (neond sets the forwarder's service channel
+# to its preset at each start). Its default channel is named after the preset. NEON_PRESET is
+# a starting value the panel can change; --preset in NEOND_ARGS (before 0.4.126) would lock it
+# there, so it moves out. Settings the panel saved get the preset given here too.
+sed -i '/^NEON_PRESET=/d; /^NEOND_ARGS=/s/--preset [A-Za-z]* *//' "$PREFIX/neond.env"
+echo "NEON_PRESET=$PRESET" >> "$PREFIX/neond.env"
+if [ -f "$PREFIX/neond.toml" ]; then
+    sed -i "s/^preset *= *\".*\"/preset = \"$PRESET\"/" "$PREFIX/neond.toml"
+fi
+if grep -q -- "^NEOND_ARGS=.*--channel" "$PREFIX/neond.env"; then
+    echo "NOTE: $PREFIX/neond.env sets --channel. For the default $PRESET channel, remove it (neond derives it from the preset)."
 fi
 systemctl daemon-reload
 
