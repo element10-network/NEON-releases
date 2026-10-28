@@ -43,6 +43,7 @@ LORAWAN=127.0.0.1:1680
 set_lorawan() {
     if [ -f "$ENV" ]; then
         sed -i '/^NEON_LORAWAN=/d' "$ENV"
+        [ ! -s "$ENV" ] || [ "$(tail -c 1 "$ENV" | od -An -c | tr -d ' ')" = '\n' ] || echo >> "$ENV"
         [ -z "$1" ] || echo "NEON_LORAWAN=$1" >> "$ENV"
     fi
     [ -f "$TOML" ] || return 0

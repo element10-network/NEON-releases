@@ -80,7 +80,8 @@ fi
 # posted epoch cannot be changed); the timer tries again the next day. NO_HUBS_OK=1 believes it.
 has_hubs() { [ -n "$(tr -d ' \n{}' < "$WORK/hubs.json")" ]; }
 for try in 1 2 3; do
-    tok hubs > "$WORK/hubs.json"
+    # A failed call (the RPC down) is an empty answer: tried again.
+    tok hubs > "$WORK/hubs.json" || : > "$WORK/hubs.json"
     has_hubs && break
     [ "$try" -lt 3 ] && sleep 20
 done

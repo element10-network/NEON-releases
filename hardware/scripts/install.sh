@@ -31,12 +31,20 @@ put() {
 DEVICE=$1
 REGION=$2
 CHIP=${3:-auto}
-PRESET=${4:-LongFast}
+PRESET=${4:-}
 
 HW=$(cd "$(dirname "$0")/.." && pwd)
 PREFIX=${NEON_PREFIX:-/opt/neon}
 SRC=$PREFIX/src
 ENV_FILE=$HW/devices/$DEVICE.env
+# The preset the panel saved (neond.toml), if any.
+toml_preset() { sed -n 's/^preset *= *"\([A-Za-z]*\)".*/\1/p' "$PREFIX/neond.toml" 2>/dev/null | head -n 1 || true; }
+# No preset given: the atom's (the panel's neond.toml, else the install's neond.env), else LongFast.
+if [ -z "$PRESET" ]; then
+    PRESET=$(toml_preset)
+    [ -n "$PRESET" ] || PRESET=$(sed -n 's/^NEON_PRESET=\([A-Za-z]*\).*/\1/p' "$PREFIX/neond.env" 2>/dev/null | tail -n 1 || true)
+    [ -n "$PRESET" ] || PRESET=LongFast
+fi
 
 [ -f "$ENV_FILE" ] || die "unknown device '$DEVICE' (no $ENV_FILE)"
 case "$REGION" in EU868|US915) ;; *) die "unknown region '$REGION'" ;; esac
@@ -233,8 +241,15 @@ fi
 # a starting value the panel can change; --preset in NEOND_ARGS (before 0.4.126) would lock it
 # there, so it moves out. Settings the panel saved get the preset given here too.
 sed -i '/^NEON_PRESET=/d; /^NEOND_ARGS=/s/--preset [A-Za-z]* *//' "$PREFIX/neond.env"
+[ "$(tail -c 1 "$PREFIX/neond.env" | od -An -c | tr -d ' ')" = '\n' ] || echo >> "$PREFIX/neond.env"
 echo "NEON_PRESET=$PRESET" >> "$PREFIX/neond.env"
 if [ -f "$PREFIX/neond.toml" ]; then
+    # With the preset, its default channel ("<preset>:AQ==" in the list) changes name, as the
+    # panel does it (web.rs with_preset_channel).
+    OLD_PRESET=$(toml_preset)
+    if [ -n "$OLD_PRESET" ] && [ "$OLD_PRESET" != "$PRESET" ] && ! grep -q "\"$PRESET:AQ==\"" "$PREFIX/neond.toml"; then
+        sed -i "s/\"$OLD_PRESET:AQ==\"/\"$PRESET:AQ==\"/g" "$PREFIX/neond.toml"
+    fi
     sed -i "s/^preset *= *\".*\"/preset = \"$PRESET\"/" "$PREFIX/neond.toml"
 fi
 if grep -q -- "^NEOND_ARGS=.*--channel" "$PREFIX/neond.env"; then
