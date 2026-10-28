@@ -1,0 +1,4 @@
+# The build needs only these two files (BuildKit reads this file for hardware/container/Dockerfile).
+*
+!hardware/release-keys.txt
+!hardware/container/fetch-release.sh

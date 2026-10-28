@@ -1,0 +1,18 @@
+# neond beside an existing packet forwarder (docs/INSTALL.md "Container"). From this directory:
+#   docker compose up -d --build        (then open http://THIS-HOST:8080 for the first-run setup)
+# Point the forwarder at this host, port 1700 (server_address / serv_port_up / serv_port_down in
+# its global_conf.json or local_conf.json).
+services:
+  neond:
+    build:
+      context: ../..
+      dockerfile: hardware/container/Dockerfile
+    image: neond
+    restart: unless-stopped
+    # The host's network: the forwarder's UDP packets, the Plasma's peers and mDNS (neon-XXXX.local)
+    # reach neond as they would on the host itself.
+    network_mode: host
+    volumes:
+      - neon:/opt/neon
+volumes:
+  neon:
