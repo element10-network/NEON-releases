@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Neon Network</title>
+<meta name="description" content="A community radio network built from retired Helium hotspots: Meshtastic for everyone around them, linked over the internet.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%22-6 -41 207 207%22 fill=%22%23e8402a%22%3E%3Cpath d=%22M80.03,125.05c-5.52,0-10-4.48-10-10V45.02s-.13-6.99-3.57-13.53c-4.07-7.73-11.08-11.49-21.44-11.49s-17.37,3.76-21.44,11.49c-3.44,6.54-3.57,13.52-3.57,13.59v69.97c0,5.52-4.48,10-10,10S0,120.57,0,115.05V45.02c0-1.14.15-11.42,5.43-21.98C12.86,8.18,26.92,0,45.02,0s32.16,8.18,39.58,23.04c5.28,10.56,5.43,20.84,5.43,21.98v70.03c0,5.52-4.48,10-10,10Z%22/%3E%3Cpath d=%22M150.06,125.05c-1.14,0-11.42-.15-21.98-5.43-14.85-7.43-23.04-21.49-23.04-39.58v-35.02c0-1.14.15-11.42,5.43-21.98C117.91,8.18,131.97,0,150.06,0s32.16,8.18,39.58,23.04c5.28,10.56,5.43,20.84,5.43,21.98s-.15,11.42-5.43,21.98c-7.43,14.85-21.49,23.04-39.58,23.04-5.52,0-10-4.48-10-10s4.48-10,10-10c10.36,0,17.37-3.76,21.44-11.49,3.27-6.2,3.55-12.81,3.57-13.53-.02-.72-.31-7.32-3.57-13.53-4.07-7.73-11.08-11.49-21.44-11.49s-17.37,3.76-21.44,11.49c-3.44,6.54-3.57,13.52-3.57,13.59v34.95c0,10.36,3.76,17.37,11.49,21.44,6.54,3.44,13.52,3.57,13.59,3.57,5.52,0,9.97,4.48,9.97,10s-4.51,10-10.03,10Z%22/%3E%3C/svg%3E">
+<!-- The landing page at https://element10.network (owner, 2026-11-03). Static: no scripts, fonts or
+     trackers. Served by Caddy on eu1 from the public NEON-releases copy (docs/HUB.md). -->
+<style>
+  :root {
+    --bg: #f6f9fb; --panel: #ffffff; --text: #18212a; --heading: #3c4a57; --muted: #617383; --line: #dfe6ec;
+    --accent: #cc3f1c; --on-accent: #ffffff; --chip: #eef2f5;
+    --s: 8px; --m: 16px; --page: 16px; --r: 10px;
+    color-scheme: light dark;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #0c1117; --panel: #131a22; --text: #eef4f8; --heading: #c6d3dd; --muted: #8fa1b0; --line: #253039;
+            --accent: #ff8a6b; --on-accent: #14100e; --chip: #1b242e; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  a { color: var(--accent); }
+  .wrap { max-width: 1040px; margin: 0 auto; padding: var(--page); display: grid; gap: var(--page); }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); }
+  header.card { display: flex; align-items: center; gap: var(--s) var(--m); flex-wrap: wrap; padding: var(--s) var(--m); min-height: 56px; }
+  .logo { height: 24px; width: auto; display: block; overflow: visible; }
+  .logo-1 { fill: var(--accent); } .logo-2 { fill: var(--text); }
+  header nav { margin-left: auto; display: flex; gap: var(--m); flex-wrap: wrap; }
+  header nav a { color: var(--heading); text-decoration: none; font-weight: 600; font-size: 14px; }
+  header nav a:hover { color: var(--accent); }
+  .hero { padding: 48px var(--m) 44px; text-align: center; }
+  .hero h1 { margin: 0 auto; max-width: 18em; font-size: clamp(26px, 4.6vw, 40px); line-height: 1.15; letter-spacing: -.01em; }
+  .hero p { margin: var(--m) auto 0; max-width: 36em; color: var(--heading); font-size: 17px; }
+  .btns { margin-top: 28px; display: flex; gap: var(--s); justify-content: center; flex-wrap: wrap; }
+  .btn { display: inline-flex; align-items: center; height: 42px; padding: 0 20px; border-radius: 8px; font-weight: 600; text-decoration: none;
+         background: var(--accent); color: var(--on-accent); }
+  .btn.secondary { background: var(--chip); color: var(--text); border: 1px solid var(--line); }
+  section.card > h2 { margin: 0; padding: var(--s) var(--m); font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--heading);
+                      border-bottom: 1px solid var(--line); font-weight: 650; }
+  .three { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .three > div { padding: var(--m); }
+  .three > div + div { border-left: 1px solid var(--line); }
+  h3 { margin: 0 0 4px; font-size: 17px; }
+  h3 .k { color: var(--accent); }
+  .three p, .steps p { margin: 0; color: var(--heading); }
+  .steps { margin: 0; padding: 0; list-style: none; counter-reset: step; }
+  .steps li { counter-increment: step; display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: var(--m); padding: var(--m); }
+  .steps li + li { border-top: 1px solid var(--line); }
+  .steps li::before { content: counter(step); width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center;
+                      background: var(--accent); color: var(--on-accent); font-weight: 700; font-size: 14px; }
+  .steps h3 { font-size: 15px; }
+  .note { padding: var(--m); color: var(--heading); border-top: 1px solid var(--line); font-size: 14px; }
+  .note b { color: var(--text); }
+  code { font: 13px ui-monospace, Menlo, Consolas, monospace; background: var(--chip); border-radius: 4px; padding: 1px 5px; }
+  footer { color: var(--muted); font-size: 13px; text-align: center; padding: 0 var(--m) var(--s); }
+  footer a { color: inherit; }
+  @media (max-width: 860px) { :root { --page: 8px; } }
+  @media (max-width: 720px) {
+    .three { grid-template-columns: minmax(0, 1fr); }
+    .three > div + div { border-left: 0; border-top: 1px solid var(--line); }
+    .hero { padding: 32px var(--m) 30px; } .hero p { font-size: 16px; }
+    header nav { margin-left: 0; flex-basis: 100%; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="card"><svg class="logo" role="img" aria-label="NEON" xmlns="http://www.w3.org/2000/svg" version="1.1" viewBox="0 0 405.18 125.05">
+  <path d="M80.03,125.05c-5.52,0-10-4.48-10-10V45.02s-.13-6.99-3.57-13.53c-4.07-7.73-11.08-11.49-21.44-11.49s-17.37,3.76-21.44,11.49c-3.44,6.54-3.57,13.52-3.57,13.59v69.97c0,5.52-4.48,10-10,10S0,120.57,0,115.05V45.02c0-1.14.15-11.42,5.43-21.98C12.86,8.18,26.92,0,45.02,0s32.16,8.18,39.58,23.04c5.28,10.56,5.43,20.84,5.43,21.98v70.03c0,5.52-4.48,10-10,10Z" class="logo-1"/>
+  <path d="M150.06,125.05c-1.14,0-11.42-.15-21.98-5.43-14.85-7.43-23.04-21.49-23.04-39.58v-35.02c0-1.14.15-11.42,5.43-21.98C117.91,8.18,131.97,0,150.06,0s32.16,8.18,39.58,23.04c5.28,10.56,5.43,20.84,5.43,21.98s-.15,11.42-5.43,21.98c-7.43,14.85-21.49,23.04-39.58,23.04-5.52,0-10-4.48-10-10s4.48-10,10-10c10.36,0,17.37-3.76,21.44-11.49,3.27-6.2,3.55-12.81,3.57-13.53-.02-.72-.31-7.32-3.57-13.53-4.07-7.73-11.08-11.49-21.44-11.49s-17.37,3.76-21.44,11.49c-3.44,6.54-3.57,13.52-3.57,13.59v34.95c0,10.36,3.76,17.37,11.49,21.44,6.54,3.44,13.52,3.57,13.59,3.57,5.52,0,9.97,4.48,9.97,10s-4.51,10-10.03,10Z" class="logo-1"/>
+  <path d="M255.11,125.05c-18.1,0-32.16-8.18-39.58-23.04-5.28-10.56-5.43-20.84-5.43-21.98v-35.02c0-1.14.15-11.42,5.43-21.98,7.43-14.86,21.49-23.04,39.58-23.04s32.16,8.18,39.58,23.04c5.28,10.56,5.43,20.84,5.43,21.98v35.02c0,1.14-.15,11.42-5.43,21.98-7.43,14.86-21.49,23.04-39.58,23.04ZM230.1,45.07v34.97s.13,6.99,3.57,13.53c4.07,7.73,11.08,11.49,21.44,11.49s17.37-3.76,21.44-11.49c3.44-6.54,3.57-13.52,3.57-13.59v-34.95s-.13-6.99-3.57-13.53c-4.07-7.73-11.08-11.49-21.44-11.49s-17.37,3.76-21.44,11.49c-3.37,6.4-3.56,13.22-3.57,13.58Z" class="logo-1"/>
+  <path d="M395.18,125.05c-5.52,0-10-4.48-10-10V45.02s-.13-6.99-3.57-13.53c-4.07-7.73-11.08-11.49-21.44-11.49s-17.37,3.76-21.44,11.49c-3.44,6.54-3.57,13.52-3.57,13.59v69.97c0,5.52-4.48,10-10,10s-10-4.48-10-10V45.02c0-1.14.15-11.42,5.43-21.98,7.43-14.86,21.49-23.04,39.58-23.04s32.16,8.18,39.58,23.04c5.28,10.56,5.43,20.84,5.43,21.98v70.03c0,5.52-4.48,10-10,10Z" class="logo-1"/>
+  <circle cx="185.08" cy="115.05" r="10" class="logo-2"/>
+</svg>
+    <nav><a href="https://neon.directory">Find your atom</a><a href="https://eu1.element10.network/explore">Explorer</a><a href="https://github.com/element10-network/NEON-releases">GitHub</a></nav>
+  </header>
+
+  <div class="card hero">
+    <h1>A community radio network, built from retired Helium hotspots</h1>
+    <p>Neon turns a Helium IoT hotspot into an <b>atom</b>: a Meshtastic node for everyone around it, linked to the
+      other atoms over the internet, and rewarded for the coverage it gives.</p>
+    <div class="btns"><a class="btn" href="#set-up">Set one up</a><a class="btn secondary" href="https://eu1.element10.network/explore">See the network</a></div>
+  </div>
+
+  <section class="card"><h2>How it works</h2>
+    <div class="three">
+      <div><h3><span class="k">Atoms</span> on the air</h3>
+        <p>Each atom listens to the Meshtastic radios around it and passes their messages on, day and night, from a
+          roof or a window, so their messages reach further.</p></div>
+      <div><h3>The <span class="k">Plasma</span> between them</h3>
+        <p>Atoms link up over the internet: their operators get messages, channels and calls with each other,
+          and the network sees where it reaches.</p></div>
+      <div><h3><span class="k">Photons</span> for coverage</h3>
+        <p>An atom earns photons for the radio coverage it proves. Each week they become NEON tokens, claimed to
+          the operator's own Solana wallet.</p></div>
+    </div>
+  </section>
+
+  <section class="card" id="set-up"><h2>Set one up</h2>
+    <ol class="steps">
+      <li><div><h3>A hotspot</h3><p>A Helium IoT hotspot built on a Raspberry Pi 4 (tested: the RAK Hotspot Miner V2). It can
+        keep serving Helium sensors too.</p></div></li>
+      <li><div><h3>The SD card</h3><p>Flash the <a href="https://github.com/element10-network/NEON-releases/releases/tag/sd-image">Neon SD image</a>
+        with Raspberry Pi Imager. The atom names itself and installs the newest release on its first start.</p></div></li>
+      <li><div><h3>Antenna, cable, power</h3><p>Antenna first. Then a network cable to your router, even if the atom will use
+        Wi-Fi later, and power. Give it about 20 minutes the first time.</p></div></li>
+      <li><div><h3>Find it and set it up</h3><p>On a phone or computer on the same network, open
+        <a href="https://neon.directory">neon.directory</a>: it lists your atoms. One page asks for your name, a password,
+        your wallet and where the atom stands. Stay on the cable or switch to Wi-Fi there.</p></div></li>
+    </ol>
+    <div class="note"><b>No cable at all?</b> After 2 minutes without a network the atom opens its own Wi-Fi,
+      <b>Neon-Setup-…</b>: join it with your phone and the setup page opens by itself.</div>
+  </section>
+
+  <section class="card"><h2>Where it stands</h2>
+    <div class="note" style="border-top:0">A <b>test network</b>, open to testers: things change, and NEON lives on Solana's
+      test network (devnet) for now. Atoms update themselves at night. Want to run one? Write to
+      <a href="mailto:neon-testers@enzyme42.com">neon-testers@enzyme42.com</a>.</div>
+  </section>
+
+  <footer>Neon Network · <a href="https://github.com/element10-network/NEON-releases">releases and install scripts</a> · GPL-3.0, like Meshtastic</footer>
+</div>
+</body>
+</html>
