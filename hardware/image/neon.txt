@@ -2,12 +2,12 @@
 # partition opens on any computer). The station installs itself on first boot and writes
 # the outcome to neon-status.txt next to this file. KEY=VALUE, one per line.
 
-# The atom's name on your network: the panel opens at http://<name>.local, and its setup
-# hotspot is called Neon-Setup-<name without "neon-"> until the panel's setup page is done,
-# then Neon-<name without "neon-">. Lowercase letters, digits and
-# hyphens, e.g. neon-garden. Empty: neon-XXXX (the last 4 hex digits of its network
-# address), or the hostname set in Raspberry Pi Imager. neon-status.txt says it from the
-# first minute.
+# Optional: the machine's own name on your network. Leave it empty: the atom names itself with
+# two words from its board, e.g. neon-amber-otter (or takes the hostname set in Raspberry Pi
+# Imager). Your own name is asked for on the panel's setup page, not here. The panel opens at
+# http://<name>.local, and the setup hotspot is called Neon-Setup-<name without "neon-"> until
+# the panel's setup page is done, then Neon-<name without "neon-">. Lowercase letters, digits
+# and hyphens. neon-status.txt says the name from the first minute.
 NEON_NAME=
 
 # EU868 or US915.

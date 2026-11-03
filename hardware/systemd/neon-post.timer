@@ -1,0 +1,10 @@
+[Unit]
+Description=Neon: post new epoch roots (checked daily; the electrode computes them on Tuesdays at 02:30 UTC)
+
+[Timer]
+OnCalendar=*-*-* 03:15:00 UTC
+Persistent=true
+RandomizedDelaySec=10min
+
+[Install]
+WantedBy=timers.target

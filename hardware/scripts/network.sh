@@ -3,7 +3,7 @@
 # (sudo sh network.sh) on a station installed before it existed.
 #
 # - The station answers as http://<hostname>.local (avahi, mDNS). A station still called
-#   "raspberrypi" is renamed neon-XXXX (the last 4 hex digits of its MAC address).
+#   "raspberrypi" is renamed with a two-word name from its board (atom-name.sh: neon-amber-otter).
 # - Port 80 sends browsers to the panel on 8080 (neond --web-redirect).
 # - With NetworkManager and Wi-Fi: the setup hotspot (neon-hotspot.sh) opens when the
 #   station has had no network for 2 minutes; the panel there lists the networks nearby.
@@ -17,8 +17,11 @@ apt-get -o DPkg::Lock::Timeout=300 install -y -q avahi-daemon libnss-mdns iw
 NAME=$(hostname)
 case "$NAME" in
     raspberrypi|localhost|"")
-        MAC=$(cat /sys/class/net/eth0/address /sys/class/net/end0/address /sys/class/net/wlan0/address 2>/dev/null | head -n 1 | tr -d ':\n')
-        NEW="neon-$(printf '%s' "${MAC:-0000}" | tail -c 4)"
+        NEW=$(sh "$HERE/atom-name.sh" 2>/dev/null) || NEW=
+        if [ -z "$NEW" ]; then
+            MAC=$(cat /sys/class/net/eth0/address /sys/class/net/end0/address /sys/class/net/wlan0/address 2>/dev/null | head -n 1 | tr -d ':\n')
+            NEW="neon-$(printf '%s' "${MAC:-0000}" | tail -c 4)"
+        fi
         hostnamectl set-hostname "$NEW" 2>/dev/null || echo "$NEW" > /etc/hostname
         if grep -q '^127\.0\.1\.1' /etc/hosts; then
             sed -i "s/^127\.0\.1\.1.*/127.0.1.1\t$NEW/" /etc/hosts

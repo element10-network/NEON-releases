@@ -90,6 +90,7 @@ grep -q '^dtparam=i2c_arm=on' "$CFG" || echo 'dtparam=i2c_arm=on' >> "$CFG"
 grep -qx 'i2c-dev' "$ROOT/etc/modules" 2>/dev/null || echo 'i2c-dev' >> "$ROOT/etc/modules"
 install -d "$ROOT/opt/neon/image"
 install -m 755 "$REPO/hardware/scripts/setup.sh" "$ROOT/opt/neon/image/setup.sh"
+install -m 755 "$REPO/hardware/scripts/atom-name.sh" "$ROOT/opt/neon/image/atom-name.sh"
 install -m 755 "$HERE/neon-firstboot.sh" "$ROOT/usr/local/sbin/neon-firstboot"
 install -m 644 "$HERE/neon-firstboot.service" "$ROOT/etc/systemd/system/neon-firstboot.service"
 chroot "$ROOT" systemctl enable neon-firstboot.service

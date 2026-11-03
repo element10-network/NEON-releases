@@ -1,0 +1,16 @@
+[Unit]
+Description=Neon: post the electrode's new epoch roots with the admin key (home)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# The user that holds the admin key (ne on hq, the owner's Pi), not root. Its SSH key may do nothing on
+# the electrode but this (neon-epoch-remote.sh).
+User=ne
+Group=ne
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ProtectHome=read-only
+ExecStart=/bin/sh /opt/neon-post/neon-post.sh

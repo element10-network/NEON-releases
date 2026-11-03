@@ -43,8 +43,10 @@ for k in NEON_REGION NEON_PRESET NEON_DEVICE NEON_REF NEON_HELIUM; do
     if [ -n "$v" ]; then export "$k=$v"; fi
 done
 
-# The name: NEON_NAME, else one set in Raspberry Pi Imager, else neon-XXXX (the last 4 hex
-# digits of the MAC address). Set now, so every status line says where the panel will be.
+# The name: NEON_NAME, else one set in Raspberry Pi Imager, else a two-word name the board gets
+# from its serial number (atom-name.sh: neon-amber-otter; owner 2026-11-03: the setup page asks
+# for the person's name, the machine names itself). Set now, so every status line says where the
+# panel will be.
 rename() {
     hostnamectl set-hostname "$1" 2>/dev/null || echo "$1" > /etc/hostname
     hostname "$1" 2>/dev/null || true
@@ -65,8 +67,12 @@ if [ -n "$NAME" ]; then
 else
     case "$(hostname)" in
         raspberrypi|localhost|"")
-            MAC=$(cat /sys/class/net/eth0/address /sys/class/net/end0/address /sys/class/net/wlan0/address 2>/dev/null | head -n 1 | tr -d ':\n')
-            rename "neon-$(printf '%s' "${MAC:-0000}" | tail -c 4)"
+            NEW=$(sh /opt/neon/image/atom-name.sh 2>/dev/null) || NEW=
+            if [ -z "$NEW" ]; then
+                MAC=$(cat /sys/class/net/eth0/address /sys/class/net/end0/address /sys/class/net/wlan0/address 2>/dev/null | head -n 1 | tr -d ':\n')
+                NEW="neon-$(printf '%s' "${MAC:-0000}" | tail -c 4)"
+            fi
+            rename "$NEW"
             ;;
     esac
 fi
