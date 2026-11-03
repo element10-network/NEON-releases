@@ -1,7 +1,7 @@
 # Neon Network: releases
 
-**A community LoRa network built on repurposed Helium IoT hotspots.** Website:
-[element10.network](https://element10.network).
+**A community LoRa network built on repurposed Helium IoT hotspots.** Find the atoms on your network at
+[neon.directory](https://neon.directory).
 
 Each repurposed hotspot is an **atom**: an always-on Meshtastic node for the local mesh, linked to the
 other atoms over the internet (the **Plasma**: messages, channels and calls for the operators), and
