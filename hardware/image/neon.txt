@@ -1,41 +1,39 @@
-# Neon station settings for the first boot. Edit before the first start (the card's boot
-# partition opens on any computer). The station installs itself on first boot and writes
-# the outcome to neon-status.txt next to this file. KEY=VALUE, one per line.
+# Neon atom, first boot. NOTHING HERE NEEDS CHANGING for a RAK Hotspot V2 in Europe: put the
+# card in, connect the network cable and start it. The atom names itself, installs itself
+# (5-20 minutes) and is then found at neon.directory, where its setup page asks for everything
+# else: your name, the Meshtastic preset, the MeshCore channel (with a MeshCore board on USB),
+# the panel password, the payout wallet, the position, and Wi-Fi (or join from the setup hotspot).
+# The outcome of the install is written to neon-status.txt next to this file.
+#
+# Only for other cases (KEY=VALUE, one per line; empty means the default):
 
-# Optional: the machine's own name on your network. Leave it empty: the atom names itself with
-# two words from its board, e.g. neon-amber-otter (or takes the hostname set in Raspberry Pi
-# Imager). Your own name is asked for on the panel's setup page, not here. The panel opens at
-# http://<name>.local, and the setup hotspot is called Neon-Setup-<name without "neon-"> until
-# the panel's setup page is done, then Neon-<name without "neon-">. Lowercase letters, digits
-# and hyphens. neon-status.txt says the name from the first minute.
-NEON_NAME=
+# EU868 (default) or US915: the hotspot's band, fixed at install.
+NEON_REGION=
 
-# EU868 or US915.
-NEON_REGION=EU868
+# rak-v2 (default: RAK Hotspot V2) or nebra-rockpi4 (see hardware/devices/).
+NEON_DEVICE=
 
-# The local mesh's Meshtastic preset, e.g. LongFast, MediumFast, ShortFast.
-NEON_PRESET=LongFast
+# The Meshtastic preset to start with (default LongFast); the setup page asks for it anyway.
+NEON_PRESET=
 
-# rak-v2 (RAK Hotspot V2) or nebra-rockpi4 (see hardware/devices/).
-NEON_DEVICE=rak-v2
-
-# 1 (or empty): install Helium's gateway software with the hotspot's own key. Its chip then
-# signs the atom's key, which photons need, and the hotspot keeps serving Helium sensors.
-# 0: leave it out.
+# Helium's gateway software with the hotspot's own key (default: on; its chip signs the atom's
+# key, which photons need). 0 leaves it out.
 NEON_HELIUM=
 
-# SSH, to follow the install and reach the atom from another computer (empty: off). A user name,
-# and a password hash made with: openssl passwd -6  (it starts with $6$; the password itself never
-# goes on the card, and the hash is removed from this file once installed), and/or a public key
-# (one line: ssh-ed25519 AAAA... you@computer). Then: ssh <user>@<name>.local
+# A machine name instead of the two-word one the atom gives itself (e.g. neon-amber-otter).
+# Lowercase letters, digits and hyphens.
+NEON_NAME=
+
+# SSH, to follow the install from another computer (empty: off, as shipped). A user name, and a
+# password hash made with: openssl passwd -6 (the hash is removed once installed), and/or a public
+# key (one line: ssh-ed25519 AAAA... you@computer).
 NEON_SSH_USER=
 NEON_SSH_HASH=
 NEON_SSH_KEY=
 
-# Wi-Fi, if the station has no network cable (or set it in Raspberry Pi Imager instead).
-# The country is required for Wi-Fi: two letters, e.g. PL, DE, GB, US. The password is
-# 8 to 63 characters, or the network's raw key as 64 hex digits (WPA2); it is removed from
-# this file once the station is installed.
+# Wi-Fi from the first boot, for an atom with no cable at all (otherwise join a network from the
+# setup page later). The country is two letters (PL, DE, GB, US); the password 8 to 63 characters
+# or the raw 64-hex-digit key. The password is removed from this file once installed.
 NEON_WIFI_COUNTRY=
 NEON_WIFI_SSID=
 NEON_WIFI_PASSWORD=

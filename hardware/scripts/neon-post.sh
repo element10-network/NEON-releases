@@ -16,6 +16,9 @@
 #   REMOTE=ne@eu1.element10.network
 #   PORT=2222
 #   SSH_KEY=/var/lib/neon-post/ssh/id_ed25519
+#   LOCAL_EPOCHS=/var/lib/neon/reports/epochs   an electrode on this machine too: it gets each
+#                                              posted epoch, so its own claim answers stay current
+#                                              (default: this directory, when it exists)
 set -eu
 CONF=${NEON_POST_CONF:-/etc/neon/post.conf}
 [ -f "$CONF" ] || { echo "no settings: $CONF"; exit 1; }
@@ -24,6 +27,7 @@ CONF=${NEON_POST_CONF:-/etc/neon/post.conf}
 URL=${URL:-devnet}
 PORT=${PORT:-22}
 KEEP=${KEEP:-/var/lib/neon-post/epochs}
+LOCAL_EPOCHS=${LOCAL_EPOCHS:-/var/lib/neon/reports/epochs}
 mkdir -p "$KEEP"
 # One run at a time (the timer and one started by hand would both post the same epoch).
 exec 9>"$KEEP/.lock"
@@ -34,6 +38,17 @@ remote() {
         -o UserKnownHostsFile=/var/lib/neon-post/ssh/known_hosts "$REMOTE" "$@"
 }
 tok() { "$NEON_TOKEN" --url "$URL" --keypair "$KEYPAIR" "$@"; }
+# An electrode on this machine (hq) serves the newest epoch it has to claim pages: given the one
+# just posted, it no longer answers with the week before (owner 2026-11-04, hq showed epoch 0).
+# Also for an epoch found on chain already (a run that posted, then failed before filing it).
+file_local() {
+    if [ -d "$LOCAL_EPOCHS" ] && [ -s "$KEEP/epoch-$1.json" ]; then
+        cp "$KEEP/epoch-$1.json" "$LOCAL_EPOCHS/.epoch-$1.json.part" &&
+            mv "$LOCAL_EPOCHS/.epoch-$1.json.part" "$LOCAL_EPOCHS/epoch-$1.json" &&
+            echo "epoch $1 also filed in $LOCAL_EPOCHS" ||
+            echo "epoch $1 not filed in $LOCAL_EPOCHS" >&2
+    fi
+}
 
 waiting=$(remote list)
 [ -n "$waiting" ] || { echo "no epoch waiting"; exit 0; }
@@ -43,6 +58,7 @@ for n in $waiting; do
     if [ "$n" -lt "$next" ]; then
         echo "epoch $n is on chain already: filing it"
         remote done "$n"
+        file_local "$n"
         continue
     fi
     if [ "$n" -gt "$next" ]; then
@@ -59,4 +75,5 @@ for n in $waiting; do
         tok post "$KEEP/epoch-$n.json"
     fi
     remote done "$n"
+    file_local "$n"
 done
