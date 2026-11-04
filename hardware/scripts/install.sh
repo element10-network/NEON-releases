@@ -7,9 +7,11 @@
 #   device  rak-v2 | nebra-rockpi4   (see hardware/devices/)
 #   region  EU868 | US915            (see hardware/configs/)
 #   preset  the local mesh's Meshtastic modem preset (default LongFast). EU868 takes
-#           ShortFast, ShortSlow, MediumFast, MediumSlow or LongFast: all are 250 kHz wide
-#           and share 869.525 MHz there. US915 takes LongFast only for now, because each
-#           preset has its own frequency there.
+#           ShortFast, ShortSlow, MediumFast, MediumSlow or LongFast on the service channel:
+#           all are 250 kHz wide and share 869.525 MHz there. The panel's other presets
+#           (ShortTurbo, LongModerate, LongSlow) are accepted but leave the service channel
+#           at LongFast's settings, as neond does. US915 takes LongFast only for now,
+#           because each preset has its own frequency there.
 #
 # With "auto" (the default), the SX1302 HAL is built first and its chip_id
 # tool probes the concentrator. If that fails, the SX1301 HAL is built instead.
@@ -49,14 +51,20 @@ fi
 [ -f "$ENV_FILE" ] || die "unknown device '$DEVICE' (no $ENV_FILE)"
 case "$REGION" in EU868|US915) ;; *) die "unknown region '$REGION'" ;; esac
 case "$CHIP" in auto|sx1302|sx1301) ;; *) die "unknown chip '$CHIP'" ;; esac
-# Spreading factor of the LoRa service channel for each supported preset (all BW 250 kHz).
+# Spreading factor of the LoRa service channel for each 250 kHz preset (neond's table,
+# neon_meshtastic::radio::PRESETS). A rerun of setup.sh passes the preset the panel saved,
+# which may be one that is not 250 kHz wide: neond then leaves the service channel as
+# installed (radio_plan::apply, "radio plan not applied"), and so does this script.
 case "$PRESET" in
     ShortFast) SF=7 ;;
     ShortSlow) SF=8 ;;
     MediumFast) SF=9 ;;
     MediumSlow) SF=10 ;;
     LongFast) SF=11 ;;
-    *) die "unsupported preset '$PRESET' (ShortFast, ShortSlow, MediumFast, MediumSlow or LongFast)" ;;
+    ShortTurbo|LongModerate|LongSlow)
+        echo "NOTE: preset $PRESET is not 250 kHz wide: the service channel keeps LongFast's settings (as neond does)."
+        SF=11 ;;
+    *) die "unsupported preset '$PRESET' (ShortFast, ShortSlow, MediumFast, MediumSlow, LongFast, ShortTurbo, LongModerate or LongSlow)" ;;
 esac
 [ "$REGION" = EU868 ] || [ "$PRESET" = LongFast ] || die "only LongFast is supported for $REGION"
 [ "$(id -u)" -eq 0 ] || die "run as root"
@@ -139,6 +147,11 @@ probe_sx1302() {
 find_sx1302() {
     for dev in "$NEON_SPI" /dev/spidev*; do
         [ -e "$dev" ] || continue
+        # The glob lists NEON_SPI again: probed once (each probe is a reset pulse and a timeout).
+        if [ "$dev" = "$NEON_SPI" ]; then
+            [ -z "${probed_first:-}" ] || continue
+            probed_first=1
+        fi
         if EUI=$(probe_sx1302 "$dev") && [ -n "$EUI" ]; then
             if [ "$dev" != "$NEON_SPI" ]; then
                 echo "NOTE: the SX1302 answered on $dev, not $NEON_SPI. Update NEON_SPI in $ENV_FILE."

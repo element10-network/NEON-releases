@@ -86,11 +86,12 @@ WIFI_PASSWORD=$(raw NEON_WIFI_PASSWORD)
 WIFI_COUNTRY=$(get NEON_WIFI_COUNTRY) || exit 1
 # "pl" as PL: raspi-config and the kernel's list know the codes in capitals only.
 WIFI_COUNTRY=$(printf '%s' "$WIFI_COUNTRY" | tr 'a-z' 'A-Z')
+# The country alone too (a station on a cable): the setup hotspot needs it to start later.
+if [ -n "$WIFI_COUNTRY" ] && command -v raspi-config >/dev/null; then
+    raspi-config nonint do_wifi_country "$WIFI_COUNTRY" || true
+fi
 if [ -n "$WIFI_SSID" ] && command -v nmcli >/dev/null; then
     status "joining Wi-Fi $WIFI_SSID"
-    if [ -n "$WIFI_COUNTRY" ] && command -v raspi-config >/dev/null; then
-        raspi-config nonint do_wifi_country "$WIFI_COUNTRY" || true
-    fi
     rfkill unblock wifi 2>/dev/null || true
     n=0
     while [ "$n" -lt 6 ]; do
