@@ -27,6 +27,9 @@ if [ -f "$STATE/update.alive" ] ||
 fi
 [ -n "$boot" ] && echo "$boot" > "$STATE/update.boot"
 n=$(cat "$STATE/update.attempts" 2>/dev/null || echo 0)
+# Anything but a number (a file cut short by a power cut) counts as none: a bad number here would
+# stop the script, and with it neond's start.
+case "$n" in "" | *[!0-9]*) n=0 ;; esac
 n=$((n + 1))
 echo "$n" > "$STATE/update.attempts"
 # The first start after the update (or after a deliberate stop or a reboot) is n = 1; any
