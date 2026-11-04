@@ -25,6 +25,9 @@ URL=${URL:-devnet}
 PORT=${PORT:-22}
 KEEP=${KEEP:-/var/lib/neon-post/epochs}
 mkdir -p "$KEEP"
+# One run at a time (the timer and one started by hand would both post the same epoch).
+exec 9>"$KEEP/.lock"
+flock -n 9 || { echo "already running"; exit 0; }
 
 remote() {
     ssh -i "$SSH_KEY" -p "$PORT" -o BatchMode=yes -o ConnectTimeout=30 \
@@ -35,6 +38,7 @@ tok() { "$NEON_TOKEN" --url "$URL" --keypair "$KEYPAIR" "$@"; }
 waiting=$(remote list)
 [ -n "$waiting" ] || { echo "no epoch waiting"; exit 0; }
 for n in $waiting; do
+    case "$n" in "" | *[!0-9]*) echo "not an epoch number from the electrode: $n" >&2; exit 1 ;; esac
     next=$(tok next-epoch)
     if [ "$n" -lt "$next" ]; then
         echo "epoch $n is on chain already: filing it"

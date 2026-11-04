@@ -47,6 +47,7 @@ NOUN="
     sun swan tapir tern terrier thistle thrush thunder thyme tiger toad tortoise toucan trout tuna
     turtle valley violet vole walnut walrus weasel whale willow wolf wren yak zebra
 "
+# ATOM_NAME_ID: the board's ID given by hand (to see the name another board would get, and in tests).
 id=${ATOM_NAME_ID:-}
 [ -n "$id" ] || id=$(tr -d '\000' 2>/dev/null < /sys/firmware/devicetree/base/serial-number || true)
 [ -n "$id" ] || id=$(sed -n 's/^Serial[[:space:]]*:[[:space:]]*//p' /proc/cpuinfo 2>/dev/null | head -n 1)

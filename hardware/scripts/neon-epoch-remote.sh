@@ -9,6 +9,8 @@
 #   prev N    epochs/epoch-(N-1).json (the one epoch N was computed from)
 #   done N    pending/epoch-N.json moved into epochs/ (once its root is on chain)
 set -eu
+# The request is split into words, never expanded as file names (a "*" in it stays a "*").
+set -f
 EPOCHS=${REPORTS:-/var/lib/neon/reports}/epochs
 set -- ${SSH_ORIGINAL_COMMAND:-}
 what=${1:-}
