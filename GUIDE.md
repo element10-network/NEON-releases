@@ -70,7 +70,7 @@ network, wipes your settings, messages, wallet and Wi-Fi, and starts as new.
 
 - No page at `neon-xxxx.local`: wait 10 minutes after power-up, then try `http://ADDRESS:8080`.
 - The **Meshtastic** page stays empty for an hour although there are Meshtastic users nearby: check the
-  modem preset (**Settings → Meshtastic → Radio**) with your local group.
-- The bottom bar says the packet forwarder is not sending: restart the atom with the round arrow at the
+  Meshtastic preset (**Settings → Meshtastic → Radio**) with your local group.
+- **Meshtastic** stays grey in the bottom bar (the packet forwarder is not connected): restart the atom with the round arrow at the
   top right of the panel, or unplug the power for 10 seconds.
 - Anything else: send a screenshot of the page to **neon-testers@enzyme42.com**.

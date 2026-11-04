@@ -18,7 +18,8 @@
 #   SSH_KEY=/var/lib/neon-post/ssh/id_ed25519
 #   LOCAL_EPOCHS=/var/lib/neon/reports/epochs   an electrode on this machine too: it gets each
 #                                              posted epoch, so its own claim answers stay current
-#                                              (default: this directory, when it exists)
+#                                              (default: this directory, when it exists; this
+#                                              user must be able to write it: sudo chown -R ne: it)
 set -eu
 CONF=${NEON_POST_CONF:-/etc/neon/post.conf}
 [ -f "$CONF" ] || { echo "no settings: $CONF"; exit 1; }
@@ -57,6 +58,10 @@ for n in $waiting; do
     next=$(tok next-epoch)
     if [ "$n" -lt "$next" ]; then
         echo "epoch $n is on chain already: filing it"
+        # The electrode's copy, not one kept here: posted by hand, or kept from a run whose post
+        # failed before the electrode computed it again, this one may be missing or another.
+        remote get "$n" > "$KEEP/epoch-$n.json.part"
+        mv "$KEEP/epoch-$n.json.part" "$KEEP/epoch-$n.json"
         remote done "$n"
         file_local "$n"
         continue

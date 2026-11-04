@@ -86,6 +86,16 @@ WIFI_PASSWORD=$(raw NEON_WIFI_PASSWORD)
 WIFI_COUNTRY=$(get NEON_WIFI_COUNTRY) || exit 1
 # "pl" as PL: raspi-config and the kernel's list know the codes in capitals only.
 WIFI_COUNTRY=$(printf '%s' "$WIFI_COUNTRY" | tr 'a-z' 'A-Z')
+# None given: the region's (owner 2026-11-04: nobody should have to edit the card, and the setup
+# hotspot cannot start without a country). EU868: PL (2.4 GHz Wi-Fi is the same in every EU
+# country, so the hotspot works across Europe); US915: US. The panel's Wi-Fi card changes it.
+if [ -z "$WIFI_COUNTRY" ]; then
+    case "${NEON_REGION:-EU868}" in
+        US*) WIFI_COUNTRY=US ;;
+        *) WIFI_COUNTRY=PL ;;
+    esac
+    status "Wi-Fi country $WIFI_COUNTRY by default (NEON_WIFI_COUNTRY in neon.txt sets another)"
+fi
 # The country alone too (a station on a cable): the setup hotspot needs it to start later.
 if [ -n "$WIFI_COUNTRY" ] && command -v raspi-config >/dev/null; then
     raspi-config nonint do_wifi_country "$WIFI_COUNTRY" || true
