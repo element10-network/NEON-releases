@@ -43,10 +43,10 @@ for k in NEON_REGION NEON_PRESET NEON_DEVICE NEON_REF NEON_HELIUM; do
     if [ -n "$v" ]; then export "$k=$v"; fi
 done
 
-# The name: NEON_NAME, else one set in Raspberry Pi Imager, else a two-word name the board gets
-# from its serial number (atom-name.sh: neon-amber-otter; owner 2026-11-03: the setup page asks
-# for the person's name, the machine names itself). Set now, so every status line says where the
-# panel will be.
+# The name: always the three-word name the board gets from its serial number (atom-name.sh:
+# amber-quiet-otter). Not chosen by hand (owner 2026-11-05): NEON_NAME in an older neon.txt and a
+# hostname set in Raspberry Pi Imager are ignored. The setup page asks for the person's name.
+# Set now, so every status line says where the panel will be.
 rename() {
     hostnamectl set-hostname "$1" 2>/dev/null || echo "$1" > /etc/hostname
     hostname "$1" 2>/dev/null || true
@@ -55,27 +55,18 @@ rename() {
     else
         printf '127.0.1.1\t%s\n' "$1" >> /etc/hosts
     fi
-}
-NAME=$(get NEON_NAME) || exit 1
-NAME=$(printf '%s' "$NAME" | tr 'A-Z' 'a-z')
-if [ -n "$NAME" ]; then
-    if ! printf '%s' "$NAME" | grep -Eq '^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$'; then
-        status "neon.txt: NEON_NAME must be lowercase letters, digits and hyphens (not at the start or end), at most 63: fix it and restart"
-        exit 1
+    # A card customised in Raspberry Pi Imager (cloud-init) would write its own name back into
+    # /etc/hosts at every boot: cloud-init leaves the name and /etc/hosts alone from now on (verify).
+    if [ -d /etc/cloud/cloud.cfg.d ]; then
+        printf 'preserve_hostname: true\nmanage_etc_hosts: false\n' > /etc/cloud/cloud.cfg.d/99-neon-hostname.cfg
     fi
-    [ "$NAME" = "$(hostname)" ] || rename "$NAME"
-else
-    case "$(hostname)" in
-        raspberrypi|localhost|"")
-            NEW=$(sh /opt/neon/image/atom-name.sh 2>/dev/null) || NEW=
-            if [ -z "$NEW" ]; then
-                MAC=$(cat /sys/class/net/eth0/address /sys/class/net/end0/address /sys/class/net/wlan0/address 2>/dev/null | head -n 1 | tr -d ':\n')
-                NEW="neon-$(printf '%s' "${MAC:-0000}" | tail -c 4)"
-            fi
-            rename "$NEW"
-            ;;
-    esac
+}
+NEW=$(sh /opt/neon/image/atom-name.sh 2>/dev/null) || NEW=
+if [ -z "$NEW" ]; then
+    MAC=$(cat /sys/class/net/eth0/address /sys/class/net/end0/address /sys/class/net/wlan0/address 2>/dev/null | head -n 1 | tr -d ':\n')
+    NEW="atom-$(printf '%s' "${MAC:-0000}" | tail -c 4)"
 fi
+[ "$NEW" = "$(hostname)" ] || rename "$NEW"
 status "starting"
 
 # Wi-Fi from neon.txt: the name and password as written (spaces and symbols allowed). A raw

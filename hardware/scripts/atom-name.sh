@@ -1,12 +1,15 @@
 #!/bin/sh
 # An atom's own name, made up on its first boot (owner, 2026-11-03): testers asked for "the atom's
 # name" gave either their own name or a machine's, so the machine now names itself and the setup
-# page asks for the person's name (the profile). Prints neon-<word>-<word>, e.g. neon-amber-otter:
-# easy to say on the phone, and the same after a reinstall or a new SD card, because it comes from
-# the board itself: the Pi's serial number (else the first network card's address, else the
-# system's machine ID). Two words from 256 each: 65,536 names. Two atoms may get the same one;
-# nothing depends on it being unique (an atom is known by its key; on one network avahi adds -2).
-# neon-firstboot.sh and network.sh use it for an atom still called raspberrypi/localhost.
+# page asks for the person's name (the profile). Prints <word>-<word>-<word>, e.g.
+# amber-quiet-otter (owner 2026-11-05: three words, no "neon-" in front): easy to say on the
+# phone, and the same after a reinstall or a new SD card, because it comes from the board itself:
+# the Pi's serial number (else the first network card's address, else the system's machine ID).
+# Two different adjectives of 256 and a noun of 256: 16,711,680 names. Every word has 8 letters at
+# most, so a name has 26 at most and fits every limit (MeshCore's 31 bytes, an SSID's 32 with
+# "Neon-" in front, Meshtastic's 39). Two atoms may still get the same one; nothing depends on it
+# being unique (an atom is known by its key; on one network avahi adds -2).
+# neon-firstboot.sh always names the atom with it; network.sh renames one still called raspberrypi.
 set -eu
 ADJ="
     able agile airy amber ample aqua arctic ashen autumn azure balanced balmy bold bouncy brave
@@ -25,7 +28,7 @@ ADJ="
     smooth snowy snug social solar solid sonic sparkly spicy spring spry steady stellar stoic sturdy
     sublime summer sunlit sunny sweet swift tall tawny teal tender thankful thrifty tidy tiny
     tireless topaz tough tranquil tropic true trusty tulip upbeat upper urban vast velvet vibrant
-    vital vivid warm wavy west wholesome wild windy winter wise witty wonder wooden woody young
+    vital vivid warm wavy west nifty wild windy winter wise witty wonder wooden woody young
     zesty zippy
 "
 NOUN="
@@ -56,9 +59,18 @@ case "$id" in *[!0[:space:]]*) ;; *) id= ;; esac
 [ -n "$id" ] || id=$(cat /sys/class/net/eth0/address /sys/class/net/end0/address /sys/class/net/wlan0/address 2>/dev/null | head -n 1)
 [ -n "$id" ] || id=$(cat /etc/machine-id 2>/dev/null || true)
 [ -n "$id" ] || { echo "atom-name.sh: nothing to name this board by" >&2; exit 1; }
-h=$(printf 'neon-atom-name:%s' "$id" | sha256sum | cut -c1-4)
+h=$(printf 'neon-atom-name:%s' "$id" | sha256sum | cut -c1-6)
 pick() { printf '%s' "$1" | tr -s ' \n' '\n\n' | sed '/^$/d' | sed -n "$(($2 + 1))p"; }
-a=$(pick "$ADJ" $((0x$(printf '%s' "$h" | cut -c1-2))))
-n=$(pick "$NOUN" $((0x$(printf '%s' "$h" | cut -c3-4))))
-[ -n "$a" ] && [ -n "$n" ] || { echo "atom-name.sh: word lists broken" >&2; exit 1; }
-echo "neon-$a-$n"
+# The first adjective and the noun from the same digits as the two-word names before 2026-11-05
+# (neon-amber-otter becomes amber-<word>-otter after a reflash); the second adjective from the next.
+b1=$((0x$(printf '%s' "$h" | cut -c1-2)))
+b3=$((0x$(printf '%s' "$h" | cut -c3-4)))
+b2=$((0x$(printf '%s' "$h" | cut -c5-6)))
+# The second adjective is never the first: one of the other 255.
+b2=$((b2 % 255))
+[ "$b2" -lt "$b1" ] || b2=$((b2 + 1))
+a=$(pick "$ADJ" "$b1")
+a2=$(pick "$ADJ" "$b2")
+n=$(pick "$NOUN" "$b3")
+[ -n "$a" ] && [ -n "$a2" ] && [ -n "$n" ] || { echo "atom-name.sh: word lists broken" >&2; exit 1; }
+echo "$a-$a2-$n"

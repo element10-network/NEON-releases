@@ -3,7 +3,7 @@
 # (sudo sh network.sh) on a station installed before it existed.
 #
 # - The station answers as http://<hostname>.local (avahi, mDNS). A station still called
-#   "raspberrypi" is renamed with a two-word name from its board (atom-name.sh: neon-amber-otter).
+#   "raspberrypi" is renamed with a three-word name from its board (atom-name.sh: amber-quiet-otter).
 # - Port 80 sends browsers to the panel on 8080 (neond --web-redirect).
 # - With NetworkManager and Wi-Fi: the setup hotspot (neon-hotspot.sh) opens when the
 #   station has had no network for 2 minutes; the panel there lists the networks nearby.

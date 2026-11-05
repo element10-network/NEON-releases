@@ -1,7 +1,7 @@
 #!/bin/sh
 # Neon setup hotspot (neon-hotspot.service). When the station has had no network (Ethernet
-# or Wi-Fi) for 2 minutes, it opens its own Wi-Fi network: "Neon-Setup-<name>" before the
-# station is set up, "Neon-<name>" after (<name>: the hostname without "neon-"); a phone or
+# or Wi-Fi) for 2 minutes, it opens its own Wi-Fi network: "Neon Setup XXXX" before the
+# station is set up, "Neon-<name>" after (<name>: the hostname, without "neon-" on older ones); a phone or
 # laptop that joins it is shown the panel (every name resolves to the station, port 80
 # redirects to the panel), where Settings -> Wi-Fi joins a network. The networks seen just
 # before are kept in /run/neon/wifi-scan.txt for the panel (the radio cannot scan as an
@@ -29,15 +29,27 @@ set_up() {
     esac
     [ -f "${conf:-/opt/neon/neond.toml}" ]
 }
-# The hotspot's name, read each time it opens (the setup may have happened since). Letters,
-# digits and hyphens only, and at most 32 bytes (an SSID's limit: a longer one would stop
-# the hotspot from starting).
+# The hotspot's name, read each time it opens (the setup may have happened since): before the
+# setup "Neon Setup XXXX" (owner 2026-11-05; XXXX: 4 hex digits from the atom's name, to tell two
+# atoms apart), after it "Neon-<name>". Letters, digits and hyphens of the name only, and at most
+# 32 bytes (an SSID's limit: a longer one would stop the hotspot from starting; names made by
+# atom-name.sh fit, an older or hand-set one loses whole words from the end, as the panel's
+# hotspotName() does).
+fit32() {
+    n=$1
+    while [ "${#n}" -gt 32 ]; do
+        # Whole words while more than one is left after "Neon-", else cut (never down to "Neon").
+        case "$n" in *-*-*) n=${n%-*} ;; *) n=$(printf '%s' "$n" | cut -c1-32) ;; esac
+    done
+    printf '%s' "$n"
+}
 ssid() {
-    name=$(hostname | sed 's/^neon-//' | tr -cd 'A-Za-z0-9-')
+    host=$(hostname)
+    name=$(printf '%s' "$host" | sed 's/^neon-//' | tr -cd 'A-Za-z0-9-')
     if set_up && [ -n "$name" ]; then
-        printf 'Neon-%s' "$name" | cut -c1-32
+        fit32 "Neon-$name"
     else
-        printf 'Neon-Setup-%s' "$name" | cut -c1-32
+        printf 'Neon Setup %s' "$(printf '%s' "$host" | sha256sum | cut -c1-4 | tr 'a-f' 'A-F')"
     fi
 }
 # The panel joining a network (it takes the hotspot down first): left alone meanwhile.

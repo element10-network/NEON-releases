@@ -3,7 +3,7 @@
 # (5-20 minutes) and is then found at neon.directory, where its setup page asks for everything
 # else: your name, the Meshtastic preset, the MeshCore channel (with a MeshCore board on USB),
 # the panel password, the payout wallet, the position, and Wi-Fi. With no cable at all, join the
-# atom's own Wi-Fi (Neon-Setup-...) from a phone: the setup page opens there.
+# atom's own Wi-Fi (Neon Setup ...) from a phone: the setup page opens there.
 # The outcome of the install is written to neon-status.txt next to this file.
 #
 # Only for other cases (KEY=VALUE, one per line; empty means the default):
@@ -20,11 +20,6 @@ NEON_PRESET=
 # Helium's gateway software with the hotspot's own key (default: on; its chip signs the atom's
 # key, which photons need). 0 leaves it out.
 NEON_HELIUM=
-
-# A machine name instead of the two-word one the atom gives itself (e.g. neon-amber-otter), or
-# the hostname set in Raspberry Pi Imager.
-# Lowercase letters, digits and hyphens.
-NEON_NAME=
 
 # SSH, to follow the install from another computer (empty: off, as shipped). A user name, and a
 # password hash made with: openssl passwd -6 (removed once applied; without a user name nothing is
