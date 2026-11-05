@@ -78,7 +78,7 @@ cp /etc/resolv.conf "$ROOT/etc/resolv.conf"
 # No services start inside the chroot.
 printf '#!/bin/sh\nexit 101\n' > "$ROOT/usr/sbin/policy-rc.d"
 chmod 755 "$ROOT/usr/sbin/policy-rc.d"
-chroot "$ROOT" sh -c 'apt-get update -q && DEBIAN_FRONTEND=noninteractive apt-get install -y -q git build-essential curl ca-certificates openssl jq && apt-get clean'
+chroot "$ROOT" sh -c 'apt-get update -q && DEBIAN_FRONTEND=noninteractive apt-get install -y -q git build-essential curl ca-certificates openssl jq python3 iw && apt-get clean'
 rm -f "$ROOT/usr/sbin/policy-rc.d"
 if [ -f "$WORK/resolv.conf" ]; then cp "$WORK/resolv.conf" "$ROOT/etc/resolv.conf"; fi
 
@@ -91,6 +91,9 @@ grep -qx 'i2c-dev' "$ROOT/etc/modules" 2>/dev/null || echo 'i2c-dev' >> "$ROOT/e
 install -d "$ROOT/opt/neon/image"
 install -m 755 "$REPO/hardware/scripts/setup.sh" "$ROOT/opt/neon/image/setup.sh"
 install -m 755 "$REPO/hardware/scripts/atom-name.sh" "$ROOT/opt/neon/image/atom-name.sh"
+# The first start's Wi-Fi page (no cable: choose the Wi-Fi on a phone).
+install -m 755 "$HERE/neon-firstwifi.py" "$ROOT/opt/neon/image/neon-firstwifi.py"
+install -m 644 "$REPO/.assets/neon_logo.svg" "$ROOT/opt/neon/image/neon_logo.svg"
 install -m 755 "$HERE/neon-firstboot.sh" "$ROOT/usr/local/sbin/neon-firstboot"
 install -m 644 "$HERE/neon-firstboot.service" "$ROOT/etc/systemd/system/neon-firstboot.service"
 chroot "$ROOT" systemctl enable neon-firstboot.service

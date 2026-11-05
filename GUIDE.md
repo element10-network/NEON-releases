@@ -10,11 +10,18 @@ on the main Solana network yet.
 
 1. Connect the antenna before the power (a radio without its antenna can be damaged).
 2. Connect a network cable to your router, then the power.
-3. Wait up to 20 minutes the first time (up to 30 if it is freshly installed).
+3. Wait up to 30 minutes the first time.
 
-No cable? After 2 minutes without a network the atom opens its own Wi-Fi called **Neon Setup …**. Join it
-with your phone: a page opens by itself. Under **Connect with** choose **Wi-Fi**, then your home network. The atom
-joins it and the Neon Setup network goes away; reconnect your phone to your home Wi-Fi.
+No cable? A few minutes after you switch it on (up to about 5 the first time **(verify)**), the atom opens its
+own Wi-Fi called **Neon Setup …**. Join it with your phone: a page opens by itself (if not, open
+**http://10.42.0.1** in the browser; if the phone says the network has no internet, choose to stay connected).
+Choose your home Wi-Fi, type its password and press **Join**. The Neon Setup network goes away: put your phone
+back on your home Wi-Fi, wait up to 30 minutes while the atom installs, then go on with step 2. If it cannot
+join, Neon Setup comes back after a few minutes: join it again, the page says what went wrong.
+
+Later, with no network (moved, a new router), the atom opens its own Wi-Fi again after 2 minutes, now called
+**Neon …**. Join it, log in with the panel password, and under **Settings → Network** choose **Wi-Fi**, then
+your network, **Connect**.
 
 ## 2. Set it up
 

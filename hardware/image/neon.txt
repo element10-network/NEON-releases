@@ -1,9 +1,10 @@
 # Neon atom, first boot. NOTHING HERE NEEDS CHANGING for a RAK Hotspot V2 in Europe: put the
 # card in, connect the network cable and start it. The atom names itself, installs itself
-# (5-20 minutes) and is then found at neon.directory, where its setup page asks for everything
+# (up to 30 minutes) and is then found at neon.directory, where its setup page asks for everything
 # else: your name, the Meshtastic preset, the MeshCore channel (with a MeshCore board on USB),
 # the panel password, the payout wallet, the position, and Wi-Fi. With no cable at all, join the
-# atom's own Wi-Fi (Neon Setup ...) from a phone: the setup page opens there.
+# atom's own Wi-Fi (Neon Setup ..., after 2 minutes) from a phone and choose the Wi-Fi on the page
+# that opens: the atom joins it and installs.
 # The outcome of the install is written to neon-status.txt next to this file.
 #
 # Only for other cases (KEY=VALUE, one per line; empty means the default):

@@ -9,7 +9,8 @@
 # most, so a name has 26 at most and fits every limit (MeshCore's 31 bytes, Meshtastic's 39). Two
 # atoms may still get the same one; nothing depends on it being unique (an atom is known by its
 # key; on one network avahi adds -2).
-# neon-firstboot.sh always names the atom with it; network.sh renames one still called raspberrypi.
+# neon-firstboot.sh always names the atom with it; network.sh renames one still called raspberrypi;
+# neond (atom_name.rs) reads these word lists and renames an installed atom at start (tested equal).
 set -eu
 ADJ="
     able agile airy amber ample aqua arctic ashen autumn azure balanced balmy bold bouncy brave

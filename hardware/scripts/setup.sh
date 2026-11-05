@@ -134,9 +134,10 @@ if [ ! -f "$PREFIX/neond.env" ]; then
 NEON_PRESET=$PRESET
 NEOND_ARGS=--region $NEOND_REGION --web 0.0.0.0:8080
 EOF
-elif grep -q -- '--region ' "$PREFIX/neond.env"; then
+elif grep -q -- '^NEOND_ARGS=.*--region ' "$PREFIX/neond.env"; then
     # A rerun (perhaps with another region): neond follows it (install.sh updates the preset).
-    sed -i "s/--region [A-Za-z0-9_]*/--region $NEOND_REGION/" "$PREFIX/neond.env"
+    # Only on the NEOND_ARGS line (the template's comments mention --region too).
+    sed -i "/^NEOND_ARGS=/s/--region [A-Za-z0-9_]*/--region $NEOND_REGION/" "$PREFIX/neond.env"
 else
     sed -i "s/^NEOND_ARGS=/NEOND_ARGS=--region $NEOND_REGION /" "$PREFIX/neond.env"
 fi
@@ -150,6 +151,9 @@ on_exit() {
     fi
 }
 trap on_exit EXIT
+# (dash runs the EXIT trap on a signal only through an exit: Ctrl-C or a dropped SSH must not leave
+# the station stopped.)
+trap 'exit 1' INT TERM HUP
 STOPPED=1
 systemctl stop neond neon-forwarder 2>/dev/null || true
 

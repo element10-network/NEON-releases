@@ -16,7 +16,7 @@ exec >>"$LOG" 2>&1
 echo "== $(date -u '+%F %T') Neon first boot (image $(cat /opt/neon/image/commit 2>/dev/null))"
 
 status() {
-    { echo "Neon station setup: $1"; echo "Name: $(hostname), panel at http://$(hostname).local"
+    { echo "Neon atom setup: $1"; echo "Name: $(hostname); find it at neon.directory (no internet: http://$(hostname).local)"
       echo "($(date -u '+%F %T') UTC; full log: $LOG)"; echo
       tail -n 30 "$LOG"; } > "$STATUS"
     sync
@@ -63,6 +63,8 @@ rename() {
     # Imager's own user-data on the card wins over that file: its name and hosts handling go too.
     if [ -f "$BOOT/user-data" ]; then
         sed -i -e "s/^hostname:.*/hostname: $1/" -e 's/^manage_etc_hosts:.*/manage_etc_hosts: false/' "$BOOT/user-data" 2>/dev/null || true
+        # cloud-init reads the card's user-data again only without its own copy (verify).
+        rm -f /var/lib/cloud/instance/obj.pkl
     fi
 }
 NEW=$(sh /opt/neon/image/atom-name.sh 2>/dev/null) || NEW=
@@ -84,6 +86,11 @@ WIFI_COUNTRY=$(printf '%s' "$WIFI_COUNTRY" | tr 'a-z' 'A-Z')
 # None given: the region's (owner 2026-11-04: nobody should have to edit the card, and the setup
 # hotspot cannot start without a country). EU868: PL (2.4 GHz Wi-Fi is the same in every EU
 # country, so the hotspot works across Europe); US915: US. The panel's Wi-Fi card changes it.
+# A country already set (Raspberry Pi Imager) stays.
+if [ -z "$WIFI_COUNTRY" ] && command -v raspi-config >/dev/null; then
+    WIFI_COUNTRY=$(raspi-config nonint get_wifi_country 2>/dev/null | tr -d '[:space:]') || WIFI_COUNTRY=
+    [ -n "$WIFI_COUNTRY" ] && status "Wi-Fi country $WIFI_COUNTRY as already set"
+fi
 if [ -z "$WIFI_COUNTRY" ]; then
     case "${NEON_REGION:-EU868}" in
         US*) WIFI_COUNTRY=US ;;
@@ -111,7 +118,8 @@ if [ -n "$WIFI_SSID" ] && command -v nmcli >/dev/null; then
     done
     # Joined: NetworkManager keeps the password (root only), so it leaves the card's open
     # partition now, whatever happens below. Not joined: it stays for the next boot's try.
-    if [ "$n" -lt 6 ] || nmcli -t -f GENERAL.STATE device show wlan0 2>/dev/null | grep -q connected; then
+    # "100 (connected)" only: "30 (disconnected)" contains "connected" too.
+    if [ "$n" -lt 6 ] || nmcli -g GENERAL.STATE device show wlan0 2>/dev/null | grep -q '^100'; then
         sed -i 's/^\([[:space:]]*NEON_WIFI_PASSWORD[[:space:]]*=\).*/\1/' "$CONF"
     fi
 fi
@@ -162,17 +170,96 @@ if [ -n "$SSH_USER" ]; then
     echo "SSH on for $SSH_USER"
 fi
 status "waiting for the network"
+# No network after 2 minutes: the atom opens its setup Wi-Fi, "Neon Setup XXXX" (the same as the
+# installed atom's, neon-hotspot.sh), and a phone that joins it is shown neon-firstwifi.py's page:
+# choose the Wi-Fi, and the atom joins it and installs (owner 2026-11-05: not everyone can use a
+# cable). A cable plugged in meanwhile works too: the hotspot closes once the internet is there.
+CON=neon-setup
+RUN=/run/neon
+mkdir -p "$RUN"
+WDEV=$(nmcli -t -f DEVICE,TYPE device 2>/dev/null | awk -F: '$2 == "wifi" { print $1; exit }')
+SETUP_SSID="Neon Setup $(hostname | tr -d '\n' | sha256sum | cut -c1-4 | tr 'a-f' 'A-F')"
+ap_on() { nmcli -t -f NAME connection show --active 2>/dev/null | grep -qx "$CON"; }
+ap_start() {
+    rfkill unblock wifi 2>/dev/null || true
+    # The networks around, for the page (the radio cannot scan while it is the access point).
+    nmcli device wifi rescan ifname "$WDEV" >/dev/null 2>&1
+    sleep 5
+    nmcli -t -f SSID,SIGNAL,SECURITY device wifi list ifname "$WDEV" > "$RUN/wifi-scan.txt.tmp" 2>/dev/null \
+        && mv "$RUN/wifi-scan.txt.tmp" "$RUN/wifi-scan.txt"
+    # Every name on the hotspot leads to the atom, so phones open the page by themselves.
+    mkdir -p /etc/NetworkManager/dnsmasq-shared.d
+    echo 'address=/#/10.42.0.1' > /etc/NetworkManager/dnsmasq-shared.d/neon-captive.conf
+    nmcli connection delete "$CON" >/dev/null 2>&1
+    nmcli connection add type wifi ifname "$WDEV" con-name "$CON" autoconnect no ssid "$SETUP_SSID" \
+        802-11-wireless.mode ap 802-11-wireless.band bg ipv4.method shared ipv6.method ignore >/dev/null \
+        && nmcli connection up "$CON" >/dev/null
+}
+ap_stop() { nmcli connection delete "$CON" >/dev/null 2>&1; }
+# A Wi-Fi it knows besides its own (neon.txt, Imager, one chosen on the page): worth stepping aside for.
+knows_wifi() { nmcli -t -f TYPE,NAME connection show 2>/dev/null | grep '^802-11-wireless:' | grep -vqx "802-11-wireless:$CON"; }
+# Without iw it cannot tell: never aside then (a phone on it would be dropped).
+nobody_on() { command -v iw >/dev/null && [ -z "$(iw dev "$WDEV" station dump 2>/dev/null)" ]; }
+offline_since=$(date +%s)
+ap_since=0
+PAGE_PID=
 i=0
+# Waits as long as it takes (a cable plugged in later, a router still starting, the page's Wi-Fi).
 until getent hosts api.github.com >/dev/null 2>&1; do
     i=$((i + 1))
-    if [ "$i" -gt 120 ]; then
-        status "no network after 10 minutes (Ethernet cable? Wi-Fi in neon.txt or Raspberry Pi Imager, with the country?); tries again at the next boot"
-        exit 1
+    now=$(date +%s)
+    # A join from the page that never finished (the page was killed): forgotten after 10 minutes.
+    if [ -f "$RUN/joining" ] && [ $((now - $(stat -c %Y "$RUN/joining" 2>/dev/null || echo 0))) -ge 600 ]; then
+        rm -f "$RUN/joining"
+    fi
+    if [ -z "$WDEV" ] || ! command -v python3 >/dev/null \
+        || systemctl is-enabled -q neon-hotspot 2>/dev/null; then
+        # (An install cut short already set up the installed hotspot: that one runs it.)
+        [ "$i" -eq 24 ] && status "no network yet: the first start needs one (connect the network cable, or Wi-Fi in neon.txt or Raspberry Pi Imager with its country); still waiting"
+    elif [ -f "$RUN/joined" ]; then
+        # Just joined from the page: 3 minutes for the internet before the hotspot opens again.
+        rm -f "$RUN/joined"
+        offline_since=$((now + 60))
+        joined_wait=1
+        status "joined the Wi-Fi chosen on the setup page; waiting for the internet"
+    elif [ -f "$RUN/joining" ]; then
+        :
+    elif ap_on; then
+        # The page behind it, should it have stopped.
+        if [ -z "$PAGE_PID" ] || ! kill -0 "$PAGE_PID" 2>/dev/null; then
+            python3 /opt/neon/image/neon-firstwifi.py "$WDEV" &
+            PAGE_PID=$!
+        fi
+        # A minute aside for a known Wi-Fi (a router that was off): every 10 minutes with nobody
+        # on it, every 30 in any case (a phone that saved this network stays on it).
+        if knows_wifi && { { [ $((now - ap_since)) -ge 600 ] && nobody_on; } || [ $((now - ap_since)) -ge 1800 ]; }; then
+            ap_stop
+            offline_since=$((now - 60))
+        fi
+    elif [ $((now - offline_since)) -ge 120 ]; then
+        if [ "${joined_wait:-}" = 1 ]; then
+            echo "No internet came through on the network chosen: check the router, or choose another network." > "$RUN/firstwifi-status"
+            joined_wait=
+        fi
+        if [ -z "$PAGE_PID" ] || ! kill -0 "$PAGE_PID" 2>/dev/null; then
+            python3 /opt/neon/image/neon-firstwifi.py "$WDEV" &
+            PAGE_PID=$!
+        fi
+        if ap_start; then
+            ap_since=$now
+            status "no network: join the Wi-Fi \"$SETUP_SSID\" with a phone and choose the network there (or connect the network cable)"
+        else
+            status "no network, and the setup Wi-Fi did not start (Wi-Fi country?): connect the network cable; again in 10 minutes"
+            offline_since=$((now + 480))
+        fi
     fi
     sleep 5
 done
+# Online: the first start's hotspot and page give way to the install (neond's own take over).
+if [ -n "$PAGE_PID" ]; then kill "$PAGE_PID" 2>/dev/null || true; fi
+ap_on && ap_stop
 
-status "installing (the packet forwarder is built here: 5-20 minutes)"
+status "installing (the packet forwarder is built here: up to 30 minutes)"
 tries=0
 until sh /opt/neon/image/setup.sh; do
     tries=$((tries + 1))
@@ -188,5 +275,5 @@ touch "$DONE"
 # Installed (over a cable, with the Wi-Fi not joined): the password does not stay on the card.
 sed -i 's/^\([[:space:]]*NEON_WIFI_PASSWORD[[:space:]]*=\).*/\1/' "$CONF"
 IP=$(hostname -I 2>/dev/null | cut -d' ' -f1)
-status "done. Open http://$(hostname).local (or http://${IP:-<the station address>}:8080) to finish the setup"
+status "done. Open neon.directory to finish the setup (no internet: http://$(hostname).local, or http://${IP:-<the atom's address>}:8080)"
 systemctl disable neon-firstboot.service 2>/dev/null || true
