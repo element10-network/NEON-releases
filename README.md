@@ -26,7 +26,7 @@ On a fresh Raspberry Pi OS Lite (64-bit) on a supported hotspot (tested: RAK Hot
 curl -fsSL https://raw.githubusercontent.com/element10-network/NEON-releases/main/hardware/scripts/setup.sh | sudo sh
 ```
 
-Then open `http://<hostname>.local` (or `http://<address>:8080`) and finish the setup page. Atoms
+Then open neon.directory (no internet: `http://<hostname>.local`, or `http://<address>:8080`) and finish the setup page. Atoms
 install new releases from here by themselves, between 03:00 and 05:00 UTC (panel: Settings → Updates).
 A ready SD card image is the release
 [`sd-image`](https://github.com/element10-network/NEON-releases/releases/tag/sd-image).

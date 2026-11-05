@@ -60,6 +60,10 @@ rename() {
     if [ -d /etc/cloud/cloud.cfg.d ]; then
         printf 'preserve_hostname: true\nmanage_etc_hosts: false\n' > /etc/cloud/cloud.cfg.d/99-neon-hostname.cfg
     fi
+    # Imager's own user-data on the card wins over that file: its name and hosts handling go too.
+    if [ -f "$BOOT/user-data" ]; then
+        sed -i -e "s/^hostname:.*/hostname: $1/" -e 's/^manage_etc_hosts:.*/manage_etc_hosts: false/' "$BOOT/user-data" 2>/dev/null || true
+    fi
 }
 NEW=$(sh /opt/neon/image/atom-name.sh 2>/dev/null) || NEW=
 if [ -z "$NEW" ]; then

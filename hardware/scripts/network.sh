@@ -20,7 +20,7 @@ case "$NAME" in
         NEW=$(sh "$HERE/atom-name.sh" 2>/dev/null) || NEW=
         if [ -z "$NEW" ]; then
             MAC=$(cat /sys/class/net/eth0/address /sys/class/net/end0/address /sys/class/net/wlan0/address 2>/dev/null | head -n 1 | tr -d ':\n')
-            NEW="neon-$(printf '%s' "${MAC:-0000}" | tail -c 4)"
+            NEW="atom-$(printf '%s' "${MAC:-0000}" | tail -c 4)"
         fi
         hostnamectl set-hostname "$NEW" 2>/dev/null || echo "$NEW" > /etc/hostname
         if grep -q '^127\.0\.1\.1' /etc/hosts; then

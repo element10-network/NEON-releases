@@ -6,9 +6,9 @@
 # phone, and the same after a reinstall or a new SD card, because it comes from the board itself:
 # the Pi's serial number (else the first network card's address, else the system's machine ID).
 # Two different adjectives of 256 and a noun of 256: 16,711,680 names. Every word has 8 letters at
-# most, so a name has 26 at most and fits every limit (MeshCore's 31 bytes, an SSID's 32 with
-# "Neon-" in front, Meshtastic's 39). Two atoms may still get the same one; nothing depends on it
-# being unique (an atom is known by its key; on one network avahi adds -2).
+# most, so a name has 26 at most and fits every limit (MeshCore's 31 bytes, Meshtastic's 39). Two
+# atoms may still get the same one; nothing depends on it being unique (an atom is known by its
+# key; on one network avahi adds -2).
 # neon-firstboot.sh always names the atom with it; network.sh renames one still called raspberrypi.
 set -eu
 ADJ="
