@@ -70,8 +70,11 @@ network, wipes your settings, messages, wallet and Wi-Fi, and starts as new.
 
 - The atom is not listed at neon.directory: wait 20 minutes after power-up (the first start installs
   it), check that the phone or computer is on the same network, then look again.
+- No internet (neon.directory does not open): the atom still works on your own network. On a phone or
+  computer on that network open **http://*atom name*.local** (e.g. `http://sunny-curly-cougar.local`;
+  if that does not open either, the atom's address from your router with `:8080`).
 - The **Meshtastic** page stays empty for an hour although there are Meshtastic users nearby: check the
   Meshtastic preset (**Settings → Meshtastic → Radio**) with your local group.
-- **Meshtastic** stays grey in the bottom bar (the packet forwarder is not connected): restart the atom with the round arrow at the
+- **Meshtastic** stays grey in the bottom bar (the packet forwarder is not connected): restart the atom from the power button at the
   top right of the panel, or unplug the power for 10 seconds.
 - Anything else: send a screenshot of the page to **neon-testers@enzyme42.com**.
