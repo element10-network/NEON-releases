@@ -23,7 +23,8 @@
 #   NEON_HELIUM   1 (default) | 0: on a hotspot with its ECC608 (rak-v2), install Helium's gateway
 #                 software with the hotspot's key (helium.sh): it signs the atom's key, which
 #                 photons need, and keeps the hotspot serving Helium sensors. Done once; 0 skips it
-#   NEON_REF      git branch or tag to install from (default main)
+#   NEON_REF      git branch or tag to install the scripts from, unchecked (default: the newest
+#                 release's tag, its scripts checked against its signed scripts.txt)
 #   NEON_SOURCE=1 build neond from the private source instead of downloading the release
 #   NEON_TOKEN    with NEON_SOURCE=1: GitHub token for the source (fine-grained, Contents: read-only)
 set -eu
@@ -45,7 +46,7 @@ esac
 DEVICE=${NEON_DEVICE:-rak-v2}
 REGION=${NEON_REGION:-${OLD_REGION:-EU868}}
 PRESET=${NEON_PRESET:-${OLD_PRESET:-LongFast}}
-REF=${NEON_REF:-main}
+REF=${NEON_REF:-}
 REPO=$PREFIX/src/NEON
 # The public releases and scripts; the private source (NEON_SOURCE=1 only).
 GH_REPO=element10-network/NEON-releases
@@ -80,6 +81,60 @@ else
     rm -f "$TOKEN_FILE"
     FROM=$GH_REPO
 fi
+# The newest release, read once: its scripts and its neond are one release. REL is removed on exit
+# (on_exit below takes over this trap).
+REL=$(mktemp -d)
+trap 'rm -rf "$REL"' EXIT
+trap 'exit 1' INT TERM HUP
+# signed FILE SIG: whether SIG is a release key's Ed25519 signature of FILE. The keys built into
+# this script (as into neond), not read from the clone it downloads with the release: whoever
+# could change that repository could otherwise sign with a key of their own (release.rs checks
+# this list matches hardware/release-keys.txt).
+keys="3uHOV7U6pfQy7JZS9oIVexR8+kdWJLvPlLEDz5ZnJhE="
+signed() {
+    for key in $keys; do
+        # An Ed25519 public key in DER: fixed prefix + the 32 raw bytes.
+        { printf '\060\052\060\005\006\003\053\145\160\003\041\000'; echo "$key" | base64 -d; } > "$REL/key.der"
+        if openssl pkeyutl -verify -pubin -keyform DER -inkey "$REL/key.der" -rawin \
+            -in "$1" -sigfile "$2" >/dev/null 2>&1; then
+            return 0
+        fi
+    done
+    return 1
+}
+# The newest release's description (once); fails if there is none.
+latest_release() {
+    [ -s "$REL/latest.json" ] || curl -fsSL -H "Accept: application/vnd.github+json" -o "$REL/latest.json" \
+        "https://api.github.com/repos/$GH_REPO/releases/latest"
+}
+# asset NAME FILE: download a file of the newest release (the API redirects to the file).
+asset() {
+    id=$(jq -r --arg n "$1" '.assets[] | select(.name == $n) | .id' "$REL/latest.json")
+    [ -n "$id" ] || { echo "the release has no $1"; return 1; }
+    curl -fsSL -L -H "Accept: application/octet-stream" -o "$2" \
+        "https://api.github.com/repos/$GH_REPO/releases/assets/$id"
+}
+# The scripts run as root: unless a branch or tag is given (or the private source is used), they
+# come from the newest release's tag and must match the tree hash its signed scripts.txt names.
+CHECK_SCRIPTS=""
+if [ -z "$REF" ] && [ "$FROM" = "$GH_REPO" ]; then
+    latest_release || die "no release found in $GH_REPO"
+    REF=$(jq -r '.tag_name // empty' "$REL/latest.json")
+    [ -n "$REF" ] || die "the newest release has no tag"
+    if asset scripts.txt "$REL/scripts.txt" && asset scripts.sig "$REL/scripts.sig"; then
+        signed "$REL/scripts.txt" "$REL/scripts.sig" || die "the release's scripts.txt is not signed by a release key: not installed"
+        [ "$(sed -n 's/^version //p' "$REL/scripts.txt")" = "${REF#v}" ] ||
+            die "the release's scripts.txt is for another version: not installed"
+        CHECK_SCRIPTS=$(sed -n 's/^tree \([0-9a-f]\{64\}\)$/\1/p' "$REL/scripts.txt")
+        [ -n "$CHECK_SCRIPTS" ] || die "the release's scripts.txt names no tree: not installed"
+    else
+        # Releases before scripts.txt (0.4.205 and older): their tag, unchecked.
+        echo "this release has no signed scripts.txt: its scripts are not checked"
+    fi
+elif [ "$FROM" = "$GH_REPO" ]; then
+    echo "NEON_REF=$REF: the scripts are not checked against a release"
+fi
+[ -n "$REF" ] || REF=main
 # git with the token as an HTTP header (not stored in the repository's config).
 git_gh() {
     if [ -n "$TOKEN" ]; then
@@ -103,6 +158,12 @@ if [ -d "$REPO/.git" ]; then
 else
     git_gh clone -q --depth 1 --branch "$REF" "https://github.com/$FROM.git" "$REPO" \
         || die "could not clone $FROM${NEON_SOURCE:+ (the private source: give NEON_TOKEN)}"
+fi
+if [ -n "$CHECK_SCRIPTS" ]; then
+    # As the Release workflow hashes them: every file under hardware/, by name.
+    tree=$(cd "$REPO" && find hardware -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum | sha256sum | cut -d' ' -f1)
+    [ "$tree" = "$CHECK_SCRIPTS" ] || die "the scripts at $REF do not match the release's signed scripts.txt: not installed"
+    echo "scripts checked against $REF's signed scripts.txt"
 fi
 
 if ! ls /dev/spidev* >/dev/null 2>&1 && command -v raspi-config >/dev/null; then
@@ -148,6 +209,7 @@ chmod 600 "$PREFIX/neond.env"
 # The concentrator probe needs the SPI device to itself; both start again at the end, and
 # also if a step fails on the way (a repair run must not leave the station down).
 on_exit() {
+    rm -rf "$REL"
     [ -n "${tmp:-}" ] && rm -rf "$tmp"
     if [ -n "${STOPPED:-}" ]; then
         systemctl start neon-forwarder neond 2>/dev/null || true
@@ -176,35 +238,13 @@ esac
 # (hardware/release-keys.txt), then the binary's size and SHA-256 against release.txt.
 download_release() {
     tmp=$(mktemp -d)   # removed on exit (on_exit)
-    curl -fsSL -H "Accept: application/vnd.github+json" -o "$tmp/latest.json" \
-        "https://api.github.com/repos/$GH_REPO/releases/latest" || { echo "no release found"; return 1; }
-    # asset NAME FILE: download a file of the latest release (the API redirects to the file).
-    asset() {
-        id=$(jq -r --arg n "$1" '.assets[] | select(.name == $n) | .id' "$tmp/latest.json")
-        [ -n "$id" ] || { echo "the release has no $1"; return 1; }
-        curl -fsSL -L -H "Accept: application/octet-stream" -o "$2" \
-            "https://api.github.com/repos/$GH_REPO/releases/assets/$id"
-    }
+    latest_release || { echo "no release found"; return 1; }
     asset release.txt "$tmp/release.txt" || return 1
     asset release.sig "$tmp/release.sig" || return 1
     # A release that fails its checks is refused, not replaced by a build from source (return 2);
     # only no release, no keys yet or no binary for this target falls back (return 1).
-    # The keys built into this script (as into neond), not read from the clone it downloads
-    # with the release: whoever could change that repository could otherwise sign with a key of
-    # their own (release.rs checks this list matches hardware/release-keys.txt).
-    keys="3uHOV7U6pfQy7JZS9oIVexR8+kdWJLvPlLEDz5ZnJhE="
     [ -n "$keys" ] || { echo "no release keys yet"; return 1; }
-    ok=""
-    for key in $keys; do
-        # An Ed25519 public key in DER: fixed prefix + the 32 raw bytes.
-        { printf '\060\052\060\005\006\003\053\145\160\003\041\000'; echo "$key" | base64 -d; } > "$tmp/key.der"
-        if openssl pkeyutl -verify -pubin -keyform DER -inkey "$tmp/key.der" -rawin \
-            -in "$tmp/release.txt" -sigfile "$tmp/release.sig" >/dev/null 2>&1; then
-            ok=1
-            break
-        fi
-    done
-    [ -n "$ok" ] || { echo "release signature not valid"; return 2; }
+    signed "$tmp/release.txt" "$tmp/release.sig" || { echo "release signature not valid"; return 2; }
     line=$(grep "^file $TARGET " "$tmp/release.txt") || { echo "no release binary for $TARGET"; return 1; }
     name=$(echo "$line" | cut -d' ' -f3)
     size=$(echo "$line" | cut -d' ' -f4)
