@@ -27,6 +27,10 @@
 #   FORCE=0                    1: compute even if the week is not over (tests only)
 #   NO_HUBS_OK=0               1: an empty hub registry is believed (tests, a network without
 #                              electrodes); otherwise an empty one stops the run
+#   CORE_HUBS="<peer> <peer>"  the project's own electrodes, whose word on a batch counts alone;
+#                              others' batches count when electrodes of two operators logged them
+#                              (third-party electrodes, owner 2026-11-08). Empty: the previous
+#                              epoch's list (none before it was ever set); none: every hub's alone.
 set -eu
 export RUST_BACKTRACE=0
 CONF=${NEON_EPOCH_CONF:-/etc/neon/epoch.conf}
@@ -97,6 +101,14 @@ fi
 if [ -n "${HARDWARE_FROM:-}" ]; then
     [ -f "$REPORTS/onboarded.json" ] || { echo "HARDWARE_FROM set but $REPORTS/onboarded.json is missing (neond --hardware-from keeps it)"; exit 1; }
     set -- "$@" --hardware-from "$HARDWARE_FROM" --onboarded "$REPORTS/onboarded.json"
+fi
+if [ "${CORE_HUBS:-}" = none ]; then
+    echo "[]" > "$WORK/core-hubs.json"
+    set -- "$@" --core-hubs "$WORK/core-hubs.json"
+elif [ -n "${CORE_HUBS:-}" ]; then
+    # Separated by spaces or commas; neon-oracle refuses anything that is not a registered hub.
+    printf '%s\n' "$CORE_HUBS" | tr ', \t' '\n\n\n' | awk 'BEGIN { printf "[" } NF { printf "%s\"%s\"", (n++ ? "," : ""), $1 } END { print "]" }' > "$WORK/core-hubs.json"
+    set -- "$@" --core-hubs "$WORK/core-hubs.json"
 fi
 [ "${FORCE:-0}" = 1 ] && set -- "$@" --force
 

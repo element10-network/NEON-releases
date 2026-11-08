@@ -101,6 +101,11 @@ install -m 644 "$HERE/neon.txt" "$ROOT/boot/firmware/neon.txt"
 echo "$(git -C "$REPO" rev-parse --short HEAD 2>/dev/null || echo unknown)" > "$ROOT/opt/neon/image/commit"
 echo "$URL $WANT" > "$ROOT/opt/neon/image/base"
 
+# How Raspberry Pi Imager customises this image (its Wi-Fi, user and name fields): cloud-init on
+# Raspberry Pi OS Trixie and later, its firstrun.sh before (owner 2026-11-08: the Wi-Fi fields
+# shown when the image is chosen, as for Ubuntu's).
+if [ -x "$ROOT/usr/bin/cloud-init" ]; then INIT_FORMAT=cloudinit-rpi; else INIT_FORMAT=systemd; fi
+
 echo "==> Image"
 sync
 for m in dev/pts dev sys proc boot/firmware; do umount "$ROOT/$m"; done
@@ -110,4 +115,25 @@ losetup -d "$LOOP"
 LOOP=""
 xz -T0 -6 -c "$IMG" > "$OUT"
 sha256sum "$OUT" > "$OUT.sha256"
+# The list Raspberry Pi Imager reads (App options → Content repository → Use custom URL, or
+# rpi-imager --repo URL): the image with its OS customisation (Wi-Fi, name, SSH) offered.
+NAME=$(basename "$OUT")
+cat > "$(dirname "$OUT")/os-list.json" <<EOF
+{
+  "os_list": [
+    {
+      "name": "Neon atom",
+      "description": "Raspberry Pi OS Lite (64-bit) with the Neon installer: the atom installs itself on its first start. Settings in neon.txt on the card.",
+      "url": "https://github.com/element10-network/NEON-releases/releases/download/sd-image/$NAME",
+      "extract_size": $(stat -c %s "$IMG"),
+      "extract_sha256": "$(sha256sum "$IMG" | cut -d' ' -f1)",
+      "image_download_size": $(stat -c %s "$OUT"),
+      "image_download_sha256": "$(sha256sum "$OUT" | cut -d' ' -f1)",
+      "release_date": "$(date -u +%Y-%m-%d)",
+      "init_format": "$INIT_FORMAT",
+      "devices": ["pi4-64bit", "pi5-64bit", "pi3-64bit"]
+    }
+  ]
+}
+EOF
 echo "Done: $OUT ($(du -h "$OUT" | cut -f1))"

@@ -61,6 +61,12 @@ for n in $waiting; do
         # The electrode's copy, not one kept here: posted by hand, or kept from a run whose post
         # failed before the electrode computed it again, this one may be missing or another.
         remote get "$n" > "$KEEP/epoch-$n.json.part"
+        # Only the one whose root is on chain (another would show "does not match the posted
+        # root" on every claim page, and epoch n+1's post would refuse it as its previous).
+        if ! tok check "$KEEP/epoch-$n.json.part"; then
+            echo "epoch $n: not filed: its file could not be matched with the root on chain (the reason above; a NEON-token CLI older than bd12b03 has no 'check': rebuild it)" >&2
+            exit 1
+        fi
         mv "$KEEP/epoch-$n.json.part" "$KEEP/epoch-$n.json"
         remote done "$n"
         file_local "$n"

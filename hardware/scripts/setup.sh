@@ -189,7 +189,10 @@ download_release() {
     asset release.sig "$tmp/release.sig" || return 1
     # A release that fails its checks is refused, not replaced by a build from source (return 2);
     # only no release, no keys yet or no binary for this target falls back (return 1).
-    keys=$(grep -v '^#' "$REPO/hardware/release-keys.txt" | grep -v '^ *$' || true)
+    # The keys built into this script (as into neond), not read from the clone it downloads
+    # with the release: whoever could change that repository could otherwise sign with a key of
+    # their own (release.rs checks this list matches hardware/release-keys.txt).
+    keys="3uHOV7U6pfQy7JZS9oIVexR8+kdWJLvPlLEDz5ZnJhE="
     [ -n "$keys" ] || { echo "no release keys yet"; return 1; }
     ok=""
     for key in $keys; do
@@ -252,6 +255,17 @@ fi
 step "Local name and Wi-Fi setup"
 sh "$REPO/hardware/scripts/network.sh" || echo "local name / hotspot not set up (the panel still works by address)"
 
+# A setup code (owner 2026-11-08): until the setup page has saved settings, the panel is open
+# to anyone on the network; with this code (printed below, and asked by the setup page) only the
+# one who ran this install can set the atom up. The SD card's first start gives its own
+# (NEON_SETUP_PASSWORD in neon.txt) or none (NEON_FIRSTBOOT=1). Asked only before the setup; a
+# reset removes it (the next owner gets a new one from the next install).
+if [ ! -f "$PREFIX/neond.toml" ] && [ ! -s "$PREFIX/setup-code" ] && [ "${NEON_FIRSTBOOT:-0}" != 1 ]; then
+    n=$(od -An -N4 -tu4 /dev/urandom | tr -d ' ')
+    (umask 077 && printf '%08d\n' $((n % 100000000)) > "$PREFIX/setup-code")
+fi
+[ -f "$PREFIX/setup-code" ] && chmod 600 "$PREFIX/setup-code"
+
 step "Services"
 systemctl daemon-reload
 systemctl enable -q neon-forwarder neond
@@ -269,11 +283,18 @@ if [ "${NEON_HELIUM:-1}" != 0 ] && grep -q '^NEON_ECC_I2C_BUS=' "$REPO/hardware/
 fi
 
 IP=$(hostname -I 2>/dev/null | cut -d' ' -f1)
+CODE=""
+# Not on the SD card's first start: the code is the password its owner wrote (not in a log).
+[ ! -f "$PREFIX/neond.toml" ] && [ -s "$PREFIX/setup-code" ] && [ "${NEON_FIRSTBOOT:-0}" != 1 ] && CODE=$(cat "$PREFIX/setup-code")
 cat <<EOF
 
 Neon is installed. Open the panel to finish the setup:
 
     http://$(hostname).local       (or http://${IP:-<this station's address>}:8080)
+${CODE:+
+The setup page asks for this setup code (it proves the atom is yours):
 
+    $CODE
+}
 Logs: journalctl -u neond -f      (forwarder: journalctl -u neon-forwarder -f)
 EOF

@@ -169,6 +169,28 @@ if [ -n "$SSH_USER" ]; then
     systemctl enable --now ssh 2>/dev/null || systemctl enable --now sshd 2>/dev/null || true
     echo "SSH on for $SSH_USER"
 fi
+# The setup password (owner 2026-11-08): the setup Wi-Fi's password, and the setup code the
+# panel's setup page asks for (whoever else reaches the open panel first cannot set the atom up as
+# theirs). Empty: an open setup Wi-Fi and no code, as before (a key backup is then restored only
+# after the setup).
+SETUP_PW=$(raw NEON_SETUP_PASSWORD | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+if [ -n "$SETUP_PW" ]; then
+    case ${#SETUP_PW} in
+        [8-9] | [1-5][0-9] | 6[0-3]) ;;
+        *) status "neon.txt: NEON_SETUP_PASSWORD needs 8 to 63 characters: fix it and restart"; exit 1 ;;
+    esac
+    # Printable ASCII only, as a Wi-Fi password (the setup page sends it in a header, which
+    # carries nothing else).
+    if printf '%s' "$SETUP_PW" | LC_ALL=C grep -q '[^ -~]'; then
+        status "neon.txt: NEON_SETUP_PASSWORD may have letters, digits, spaces and the usual signs only (no accented letters): fix it and restart"
+        exit 1
+    fi
+    mkdir -p /opt/neon
+    (umask 077 && printf '%s\n' "$SETUP_PW" > /opt/neon/setup-code)
+    # The installed atom's setup Wi-Fi (neon-hotspot.sh) keeps the same password.
+    q=$(printf '%s' "$SETUP_PW" | sed "s/'/'\\\\''/g")
+    (umask 077 && printf "HOTSPOT_PASSWORD='%s'\n" "$q" > /opt/neon/hotspot.conf)
+fi
 status "waiting for the network"
 # No network after 2 minutes: the atom opens its setup Wi-Fi, "Neon Setup XXXX" (the same as the
 # installed atom's, neon-hotspot.sh), and a phone that joins it is shown neon-firstwifi.py's page:
@@ -193,6 +215,7 @@ ap_start() {
     nmcli connection delete "$CON" >/dev/null 2>&1
     nmcli connection add type wifi ifname "$WDEV" con-name "$CON" autoconnect no ssid "$SETUP_SSID" \
         802-11-wireless.mode ap 802-11-wireless.band bg ipv4.method shared ipv6.method ignore >/dev/null \
+        && { [ -z "$SETUP_PW" ] || nmcli connection modify "$CON" wifi-sec.key-mgmt wpa-psk wifi-sec.psk "$SETUP_PW"; } \
         && nmcli connection up "$CON" >/dev/null
 }
 ap_stop() { nmcli connection delete "$CON" >/dev/null 2>&1; }
@@ -261,7 +284,7 @@ ap_on && ap_stop
 
 status "installing (the packet forwarder is built here: up to 30 minutes)"
 tries=0
-until sh /opt/neon/image/setup.sh; do
+until NEON_FIRSTBOOT=1 sh /opt/neon/image/setup.sh; do
     tries=$((tries + 1))
     if [ "$tries" -ge 3 ]; then
         status "FAILED; tries again at the next boot"
