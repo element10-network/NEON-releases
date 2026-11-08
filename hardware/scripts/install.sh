@@ -256,6 +256,8 @@ fi
 sed -i '/^NEON_PRESET=/d; /^NEOND_ARGS=/s/--preset [A-Za-z]* *//' "$PREFIX/neond.env"
 [ "$(tail -c 1 "$PREFIX/neond.env" | od -An -c | tr -d ' ')" = '\n' ] || echo >> "$PREFIX/neond.env"
 echo "NEON_PRESET=$PRESET" >> "$PREFIX/neond.env"
+# Root's only: NEOND_ARGS may carry a panel or MQTT password.
+chmod 600 "$PREFIX/neond.env"
 if [ -f "$PREFIX/neond.toml" ]; then
     # With the preset, its default channel ("<preset>:AQ==" in the list) changes name, as the
     # panel does it (web.rs with_preset_channel).

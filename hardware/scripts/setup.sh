@@ -72,6 +72,7 @@ TOKEN=""
 if [ "${NEON_SOURCE:-}" = 1 ]; then
     if [ -n "${NEON_TOKEN:-}" ]; then
         (umask 077 && printf '%s\n' "$NEON_TOKEN" > "$TOKEN_FILE")
+        chmod 600 "$TOKEN_FILE"
     fi
     TOKEN=$(cat "$TOKEN_FILE" 2>/dev/null || true)
     FROM=$SRC_REPO
@@ -141,6 +142,8 @@ elif grep -q -- '^NEOND_ARGS=.*--region ' "$PREFIX/neond.env"; then
 else
     sed -i "s/^NEOND_ARGS=/NEOND_ARGS=--region $NEOND_REGION /" "$PREFIX/neond.env"
 fi
+# Root's only: NEOND_ARGS may carry a panel or MQTT password.
+chmod 600 "$PREFIX/neond.env"
 
 # The concentrator probe needs the SPI device to itself; both start again at the end, and
 # also if a step fails on the way (a repair run must not leave the station down).

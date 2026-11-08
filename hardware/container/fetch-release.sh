@@ -33,6 +33,11 @@ for key in $(grep -v '^#' "$KEYS" | grep -v '^ *$'); do
     fi
 done
 [ -n "$ok" ] || { echo "release signature not valid"; exit 1; }
+# A pinned version: the signed file must say it is that one (not an older release under its tag).
+if [ "$VERSION" != latest ]; then
+    got=$(sed -n 's/^version //p' "$tmp/release.txt")
+    [ "$got" = "${VERSION#v}" ] || { echo "release.txt is version $got, not ${VERSION#v}"; exit 1; }
+fi
 line=$(grep "^file $TARGET " "$tmp/release.txt") || { echo "no release binary for $TARGET"; exit 1; }
 name=$(echo "$line" | cut -d' ' -f3)
 size=$(echo "$line" | cut -d' ' -f4)
