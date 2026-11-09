@@ -26,10 +26,14 @@ On a fresh Raspberry Pi OS Lite (64-bit) on a supported hotspot (tested: RAK Hot
 curl -fsSL https://raw.githubusercontent.com/element10-network/NEON-releases/main/hardware/scripts/setup.sh | sudo sh
 ```
 
-Then open neon.directory (no internet: `http://<hostname>.local`, or `http://<address>:8080`) and finish the setup page. Atoms
+Then open neon.directory (no internet: `http://<hostname>.local`, or `http://<address>:8080`) and finish the setup page
+(it asks for the 8-digit setup code the script prints at the end). Atoms
 install new releases from here by themselves, between 03:00 and 05:00 UTC (panel: Settings → Updates).
 A ready SD card image is the release
-[`sd-image`](https://github.com/element10-network/NEON-releases/releases/tag/sd-image).
+[`sd-image`](https://github.com/element10-network/NEON-releases/releases/tag/sd-image); in Raspberry Pi
+Imager: **App options → Content repository → Use custom URL**
+`https://github.com/element10-network/NEON-releases/releases/download/sd-image/os-list.json`, then
+**Neon atom**, and your Wi-Fi in Imager's customisation.
 
 Testers: start with [GUIDE.md](GUIDE.md).
 
@@ -37,7 +41,10 @@ Testers: start with [GUIDE.md](GUIDE.md).
 
 `release.txt` lists each binary with its size and SHA-256; `release.sig` is an Ed25519 signature of
 `release.txt` by one of the keys in `hardware/release-keys.txt`. `setup.sh` and `neond` refuse a
-release that does not check out.
+release that does not check out. `scripts.txt` (signed the same way in `scripts.sig`) names the tree hash
+of `hardware/` at the release's tag: `setup.sh` installs the scripts from that tag and checks them
+against it before running any (releases before 0.4.206 have none; with `NEON_REF` given they are not
+checked).
 
 ## License
 

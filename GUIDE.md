@@ -27,17 +27,20 @@ your network, **Connect**.
 
 1. On a computer or phone on the same network, open **neon.directory**: it lists the atoms on your
    network. A new atom shows "Getting its certificate" for a few minutes, then **Open**.
-2. The setup page is one page: **Network connection** (Cable or Wi-Fi), **your name** (the atom names
+2. If the page first asks for a **setup code**: it is the setup password written in `neon.txt` on the SD
+   card (the same password opens the **Neon Setup** Wi-Fi), or the 8 digits the install script printed.
+   Ask whoever gave you the atom if you do not have it.
+3. The setup page is one page: **Network connection** (Cable or Wi-Fi), **your name** (the atom names
    itself), the **Meshtastic preset**, a **panel password**, then **Payout wallet** and **Position**. The preset must be the one the
    Meshtastic users near you use: it often differs from region to region (in Poland from one area to the
    next), so ask your local Meshtastic group. With the wrong one the atom hears nothing. You can change it
    later under **Settings → Meshtastic → Radio**.
-3. **Payout wallet:** **Connect wallet** (a Solana wallet such as Solflare or Phantom in your browser) and
+4. **Payout wallet:** **Connect wallet** (a Solana wallet such as Solflare or Phantom in your browser) and
    sign the message it shows (free: nothing is sent to the blockchain). The photons your atom earns go to
    that wallet. Later: **Settings → Plasma → Payout**.
-4. **Position:** drop the pin where the atom stands. The network map shows it rounded to about 1 km unless
+5. **Position:** drop the pin where the atom stands. The network map shows it rounded to about 1 km unless
    you choose otherwise. Later: **Settings → Plasma → Position** or **Reach → Coverage map**.
-5. **Save and start.** The atom restarts and asks for the password.
+6. **Save and start.** The atom restarts and asks for the password.
 
 A printable sheet to keep with the atom (setup in short and a test checklist): [SHEET.html](SHEET.html)
 (open it in a browser and print it on both sides of one A4 sheet).

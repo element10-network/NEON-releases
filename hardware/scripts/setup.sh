@@ -107,34 +107,45 @@ latest_release() {
     [ -s "$REL/latest.json" ] || curl -fsSL -H "Accept: application/vnd.github+json" -o "$REL/latest.json" \
         "https://api.github.com/repos/$GH_REPO/releases/latest"
 }
-# asset NAME FILE: download a file of the newest release (the API redirects to the file).
+# asset NAME FILE: download a file of the newest release, from github.com (not the API: one API
+# call per install, its limit is 60 an hour per address).
 asset() {
-    id=$(jq -r --arg n "$1" '.assets[] | select(.name == $n) | .id' "$REL/latest.json")
-    [ -n "$id" ] || { echo "the release has no $1"; return 1; }
-    curl -fsSL -L -H "Accept: application/octet-stream" -o "$2" \
-        "https://api.github.com/repos/$GH_REPO/releases/assets/$id"
+    url=$(jq -r --arg n "$1" '[.assets[]? | select(.name == $n) | .browser_download_url][0] // empty' "$REL/latest.json")
+    [ -n "$url" ] || { echo "the release has no $1"; return 1; }
+    curl -fsSL --retry 3 -o "$2" "$url"
 }
+# vle A B: whether version A is at most B (x.y.z).
+vle() { [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n 1)" = "$1" ]; }
+# The first release whose scripts are signed (scripts.txt): an older one is never installed from
+# here, so making an old release the newest cannot bring back unchecked scripts.
+MIN_RELEASE=0.4.206
 # The scripts run as root: unless a branch or tag is given (or the private source is used), they
 # come from the newest release's tag and must match the tree hash its signed scripts.txt names.
+# Every failure stops the install (a download that fails is not "an older release").
 CHECK_SCRIPTS=""
+VERSION=""
 if [ -z "$REF" ] && [ "$FROM" = "$GH_REPO" ]; then
-    latest_release || die "no release found in $GH_REPO"
+    latest_release || die "no release found in $GH_REPO (GitHub may limit requests from this address: try again in an hour)"
     REF=$(jq -r '.tag_name // empty' "$REL/latest.json")
-    [ -n "$REF" ] || die "the newest release has no tag"
-    if asset scripts.txt "$REL/scripts.txt" && asset scripts.sig "$REL/scripts.sig"; then
-        signed "$REL/scripts.txt" "$REL/scripts.sig" || die "the release's scripts.txt is not signed by a release key: not installed"
-        [ "$(sed -n 's/^version //p' "$REL/scripts.txt")" = "${REF#v}" ] ||
-            die "the release's scripts.txt is for another version: not installed"
-        CHECK_SCRIPTS=$(sed -n 's/^tree \([0-9a-f]\{64\}\)$/\1/p' "$REL/scripts.txt")
-        [ -n "$CHECK_SCRIPTS" ] || die "the release's scripts.txt names no tree: not installed"
-    else
-        # Releases before scripts.txt (0.4.205 and older): their tag, unchecked.
-        echo "this release has no signed scripts.txt: its scripts are not checked"
-    fi
+    case "$REF" in
+        v[0-9]*.[0-9]*.[0-9]*) ;;
+        *) die "the newest release's tag is not a version: $REF" ;;
+    esac
+    case "$REF" in *[!v0-9.]*) die "the newest release's tag is not a version: $REF" ;; esac
+    VERSION=${REF#v}
+    vle "$MIN_RELEASE" "$VERSION" || die "the newest release ($VERSION) is older than $MIN_RELEASE: not installed"
+    asset scripts.txt "$REL/scripts.txt" || die "could not download the release's scripts.txt: not installed"
+    asset scripts.sig "$REL/scripts.sig" || die "could not download the release's scripts.sig: not installed"
+    signed "$REL/scripts.txt" "$REL/scripts.sig" || die "the release's scripts.txt is not signed by a release key: not installed"
+    [ "$(sed -n 's/^version //p' "$REL/scripts.txt")" = "$VERSION" ] ||
+        die "the release's scripts.txt is for another version: not installed"
+    CHECK_SCRIPTS=$(sed -n 's/^tree \([0-9a-f]\{64\}\)$/\1/p' "$REL/scripts.txt")
+    [ -n "$CHECK_SCRIPTS" ] || die "the release's scripts.txt names no tree: not installed"
 elif [ "$FROM" = "$GH_REPO" ]; then
     echo "NEON_REF=$REF: the scripts are not checked against a release"
 fi
 [ -n "$REF" ] || REF=main
+case "$REF" in -*) die "NEON_REF may not start with -" ;; esac
 # git with the token as an HTTP header (not stored in the repository's config).
 git_gh() {
     if [ -n "$TOKEN" ]; then
@@ -153,13 +164,16 @@ if [ -d "$REPO/.git" ] && [ "$(git -C "$REPO" remote get-url origin 2>/dev/null)
     rm -rf "$REPO"
 fi
 if [ -d "$REPO/.git" ]; then
-    git_gh -C "$REPO" fetch -q --depth 1 origin "$REF"
+    git_gh -C "$REPO" fetch -q --depth 1 origin -- "$REF"
     git_gh -C "$REPO" checkout -q -f FETCH_HEAD
 else
     git_gh clone -q --depth 1 --branch "$REF" "https://github.com/$FROM.git" "$REPO" \
         || die "could not clone $FROM${NEON_SOURCE:+ (the private source: give NEON_TOKEN)}"
 fi
 if [ -n "$CHECK_SCRIPTS" ]; then
+    # Nothing but the release's files under hardware/ (a file left there by hand would change the
+    # hash, and is not the release's).
+    git -C "$REPO" clean -q -ffdx -- hardware
     # As the Release workflow hashes them: every file under hardware/, by name.
     tree=$(cd "$REPO" && find hardware -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum | sha256sum | cut -d' ' -f1)
     [ "$tree" = "$CHECK_SCRIPTS" ] || die "the scripts at $REF do not match the release's signed scripts.txt: not installed"
@@ -245,6 +259,11 @@ download_release() {
     # only no release, no keys yet or no binary for this target falls back (return 1).
     [ -n "$keys" ] || { echo "no release keys yet"; return 1; }
     signed "$tmp/release.txt" "$tmp/release.sig" || { echo "release signature not valid"; return 2; }
+    # The neond of the same release as the scripts checked above (not an older signed release.txt
+    # put in its place).
+    if [ -n "$VERSION" ] && [ "$(sed -n 's/^version //p' "$tmp/release.txt")" != "$VERSION" ]; then
+        echo "release.txt is not for $VERSION"; return 2
+    fi
     line=$(grep "^file $TARGET " "$tmp/release.txt") || { echo "no release binary for $TARGET"; return 1; }
     name=$(echo "$line" | cut -d' ' -f3)
     size=$(echo "$line" | cut -d' ' -f4)
