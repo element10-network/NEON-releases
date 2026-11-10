@@ -12,7 +12,9 @@
 #   NEON_POWER_GPIO_LINE  optional power-enable line on the same controller, driven high on start
 #
 # The controller is looked up at run time because newer kernels (6.6+) no
-# longer give GPIO controllers fixed sysfs numbers.
+# longer give GPIO controllers fixed sysfs numbers. A kernel without the sysfs
+# GPIO interface at all (Armbian, a Nebra) is driven with libgpiod's gpioset
+# (v1 or v2) instead (verify on the Nebra).
 
 set -eu
 
@@ -43,6 +45,51 @@ resolve_gpio() {
     done
     exit 1
 }
+
+# No sysfs GPIO: the controller's character device (/dev/gpiochipN) and gpioset.
+if [ ! -e "$SYSFS/export" ] && [ -z "${NEON_GPIO_SYSFS:-}" ] && command -v gpioset >/dev/null; then
+    : "${NEON_RESET_GPIO_CHIP:?set NEON_RESET_GPIO_CHIP in device.env (libgpiod needs the controller)}"
+    : "${NEON_RESET_GPIO_LINE:?set NEON_RESET_GPIO_LINE in device.env}"
+    CHIPDEV=""
+    for chip in /sys/bus/gpio/devices/gpiochip*; do
+        [ -e "$chip" ] || continue
+        label=$(cat "$chip/label" 2>/dev/null || true)
+        dev=$(readlink -f "$chip" 2>/dev/null || true)
+        case "$label $dev" in
+            *"$NEON_RESET_GPIO_CHIP"*) CHIPDEV=$(basename "$chip"); break ;;
+        esac
+    done
+    [ -n "$CHIPDEV" ] || { echo "ERROR: no GPIO controller matches '$NEON_RESET_GPIO_CHIP' (libgpiod)" >&2; ls /sys/bus/gpio/devices/ >&2 || true; exit 1; }
+    # set <line> <0|1>: v2 holds the line until stopped (-t 0: set and exit); v1 sets and exits.
+    set_line() {
+        if gpioset --version 2>/dev/null | grep -q 'v2'; then
+            gpioset -c "$CHIPDEV" -t 0 "$1=$2"
+        else
+            gpioset "$CHIPDEV" "$1=$2"
+        fi
+        sleep 0.1
+    }
+    case "${1:-}" in
+        start)
+            if [ -n "${NEON_POWER_GPIO_LINE:-}" ]; then
+                echo "Concentrator power on through $CHIPDEV line $NEON_POWER_GPIO_LINE"
+                set_line "$NEON_POWER_GPIO_LINE" 1
+            fi
+            echo "Concentrator reset through $CHIPDEV line $NEON_RESET_GPIO_LINE"
+            set_line "$NEON_RESET_GPIO_LINE" 1
+            set_line "$NEON_RESET_GPIO_LINE" 0
+            ;;
+        stop)
+            set_line "$NEON_RESET_GPIO_LINE" 1
+            set_line "$NEON_RESET_GPIO_LINE" 0
+            ;;
+        *)
+            echo "Usage: $0 {start|stop}" >&2
+            exit 1
+            ;;
+    esac
+    exit 0
+fi
 
 if [ -n "${NEON_RESET_GPIO:-}" ]; then
     GPIO=$NEON_RESET_GPIO

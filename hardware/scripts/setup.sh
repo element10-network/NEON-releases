@@ -116,9 +116,9 @@ asset() {
 }
 # vle A B: whether version A is at most B (x.y.z).
 vle() { [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n 1)" = "$1" ]; }
-# The first release whose scripts are signed (scripts.txt): an older one is never installed from
-# here, so making an old release the newest cannot bring back unchecked scripts.
-MIN_RELEASE=0.4.206
+# An older release is never installed from here: making an old release the newest cannot bring back
+# its unchecked scripts or fixed bugs. Raised with each stable release (the one before it).
+MIN_RELEASE=0.7.4
 # The scripts run as root: unless a branch or tag is given (or the private source is used), they
 # come from the newest release's tag and must match the tree hash its signed scripts.txt names.
 # Every failure stops the install (a download that fails is not "an older release").
@@ -192,6 +192,12 @@ if ! ls /dev/i2c-* >/dev/null 2>&1 && command -v raspi-config >/dev/null; then
     raspi-config nonint do_i2c 0 || true
     modprobe i2c-dev 2>/dev/null || true
     ls /dev/i2c-* >/dev/null 2>&1 || die "I2C is still off: reboot, then run this again"
+fi
+# Without raspi-config (Armbian on a Nebra's ROCK Pi 4): the I2C device nodes come from the i2c-dev
+# module, loaded now and at every boot (the bus itself is the board's overlay) (verify on a Nebra).
+if ! command -v raspi-config >/dev/null; then
+    modprobe i2c-dev 2>/dev/null || true
+    [ -f /etc/modules-load.d/i2c-dev.conf ] || echo i2c-dev > /etc/modules-load.d/i2c-dev.conf
 fi
 
 # neond's region name (backbone topic, channel links) for the forwarder's region.
@@ -276,7 +282,14 @@ download_release() {
     install -m 755 "$tmp/neond" "$BIN.new" || return 1
     "$BIN.new" --version >/dev/null 2>&1 || { echo "the release binary does not run here"; rm -f "$BIN.new"; return 1; }
     mv -f "$BIN.new" "$BIN" || return 1
+    forget_update_guard
     echo "installed release $(sed -n 's/^version //p' "$tmp/release.txt")"
+}
+
+# A binary installed here is no update on probation: the guard's files go (else a later crash
+# would put an older neond.prev back over it and call this release a failure).
+forget_update_guard() {
+    rm -f "$BIN.prev" /opt/neon/update.json /opt/neon/update.attempts /opt/neon/update.alive /opt/neon/update.boot
 }
 
 build_from_source() {
@@ -288,6 +301,7 @@ build_from_source() {
     install -m 755 "$REPO/target/release/neond" "$BIN.new"
     "$BIN.new" --version >/dev/null
     mv -f "$BIN.new" "$BIN"
+    forget_update_guard
 }
 
 step "neond"
@@ -324,6 +338,15 @@ if [ ! -f "$PREFIX/neond.toml" ] && [ ! -s "$PREFIX/setup-code" ] && [ "${NEON_F
     (umask 077 && printf '%08d\n' $((n % 100000000)) > "$PREFIX/setup-code")
 fi
 [ -f "$PREFIX/setup-code" ] && chmod 600 "$PREFIX/setup-code"
+# The setup Wi-Fi's password is the code (owner 2026-11-10: never an open one before the setup).
+# Only before the setup (an atom set up long ago keeps its recovery Wi-Fi as it was, not locked
+# with a code its owner forgot). network.sh above started the hotspot before this file existed:
+# started again, it has the password at once.
+if [ ! -f "$PREFIX/neond.toml" ] && [ -s "$PREFIX/setup-code" ] && [ ! -s "$PREFIX/hotspot.conf" ]; then
+    pw=$(sed "s/'/'\\\\''/g" "$PREFIX/setup-code" | head -n 1)
+    (umask 077 && printf "HOTSPOT_PASSWORD='%s'\n" "$pw" > "$PREFIX/hotspot.conf")
+    systemctl try-restart neon-hotspot 2>/dev/null || true
+fi
 
 step "Services"
 systemctl daemon-reload

@@ -43,7 +43,7 @@ index 9751621..d604b90 100644
  /**
  @brief TODO
 diff --git a/libloragw/src/loragw_hal.c b/libloragw/src/loragw_hal.c
-index ffc8ec0..e04371b 100644
+index ffc8ec0..d41557b 100644
 --- a/libloragw/src/loragw_hal.c
 +++ b/libloragw/src/loragw_hal.c
 @@ -127,6 +127,8 @@ static lgw_context_t lgw_context = {
@@ -92,7 +92,21 @@ index ffc8ec0..e04371b 100644
      if (err != LGW_REG_SUCCESS) {
          printf("ERROR: failed to configure SX1302 LoRa syncword\n");
          return LGW_HAL_ERROR;
-@@ -1113,8 +1120,9 @@ int lgw_start(void) {
+@@ -1098,8 +1105,11 @@ int lgw_start(void) {
+             ts_addr = I2C_PORT_TEMP_SENSOR[i];
+             err = i2c_linuxdev_open(I2C_DEVICE, ts_addr, &ts_fd);
+             if (err != LGW_I2C_SUCCESS) {
+-                printf("ERROR: failed to open I2C for temperature sensor on port 0x%02X\n", ts_addr);
+-                return LGW_HAL_ERROR;
++                /* Neon: no I2C bus at all (a board or OS without /dev/i2c-1): no sensor either */
++                printf("WARNING: failed to open I2C for temperature sensor on port 0x%02X\n", ts_addr);
++                ts_fd = -1;
++                i = (int)(sizeof I2C_PORT_TEMP_SENSOR);
++                break;
+             }
+ 
+             err = stts751_configure(ts_fd, ts_addr);
+@@ -1113,8 +1123,9 @@ int lgw_start(void) {
              }
          }
          if (i == sizeof I2C_PORT_TEMP_SENSOR) {
@@ -104,7 +118,7 @@ index ffc8ec0..e04371b 100644
          }
  
          /* Configure ADC AD338R for full duplex (CN490 reference design) */
-@@ -1222,11 +1230,14 @@ int lgw_stop(void) {
+@@ -1222,11 +1233,14 @@ int lgw_stop(void) {
      }
  
      if (CONTEXT_COM_TYPE == LGW_COM_SPI) {
@@ -124,7 +138,7 @@ index ffc8ec0..e04371b 100644
          }
  
          if (CONTEXT_BOARD.full_duplex == true) {
-@@ -1432,7 +1443,7 @@ int lgw_send(struct lgw_pkt_tx_s * pkt_data) {
+@@ -1432,7 +1446,7 @@ int lgw_send(struct lgw_pkt_tx_s * pkt_data) {
      }
  
      /* Send the TX request to the concentrator */
@@ -133,7 +147,7 @@ index ffc8ec0..e04371b 100644
      if (err != LGW_REG_SUCCESS) {
          printf("ERROR: %s: Failed to send packet\n", __FUNCTION__);
  
-@@ -1597,7 +1608,12 @@ int lgw_get_temperature(float* temperature) {
+@@ -1597,7 +1611,12 @@ int lgw_get_temperature(float* temperature) {
  
      switch (CONTEXT_COM_TYPE) {
          case LGW_COM_SPI:

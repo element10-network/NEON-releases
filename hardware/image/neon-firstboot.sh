@@ -17,6 +17,7 @@ echo "== $(date -u '+%F %T') Neon first boot (image $(cat /opt/neon/image/commit
 
 status() {
     { echo "Neon atom setup: $1"; echo "Name: $(hostname); find it at neon.directory (no internet: http://$(hostname).local)"
+      [ -n "${SETUP_PW_MADE:-}" ] && echo "Setup code (and the password of the \"Neon Setup\" Wi-Fi): $SETUP_PW_MADE"
       echo "($(date -u '+%F %T') UTC; full log: $LOG)"; echo
       tail -n 30 "$LOG"; } > "$STATUS"
     sync
@@ -174,6 +175,17 @@ fi
 # theirs). Empty: an open setup Wi-Fi and no code, as before (a key backup is then restored only
 # after the setup).
 SETUP_PW=$(raw NEON_SETUP_PASSWORD | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+# None given (owner 2026-11-10): one is made, 8 digits, and written in neon-status.txt on the card
+# (read it on any computer): never an open setup Wi-Fi nor a panel anyone near can set up first.
+if [ -z "$SETUP_PW" ]; then
+    if [ -s /opt/neon/setup-code ]; then
+        SETUP_PW=$(cat /opt/neon/setup-code)
+    else
+        n=$(od -An -N4 -tu4 /dev/urandom | tr -d ' ')
+        SETUP_PW=$(printf '%08d' $((n % 100000000)))
+    fi
+    SETUP_PW_MADE=$SETUP_PW
+fi
 if [ -n "$SETUP_PW" ]; then
     case ${#SETUP_PW} in
         [8-9] | [1-5][0-9] | 6[0-3]) ;;

@@ -84,6 +84,8 @@ fi
 
 if command -v apt-get >/dev/null; then
     apt-get -o DPkg::Lock::Timeout=300 install -y git build-essential
+    # Kernels without /sys/class/gpio (Armbian on a Nebra): reset_lgw.sh uses libgpiod's gpioset.
+    [ -d /sys/class/gpio ] || apt-get -o DPkg::Lock::Timeout=300 install -y gpiod
 fi
 mkdir -p "$SRC"
 
