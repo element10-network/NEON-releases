@@ -84,6 +84,10 @@ if [ ! -e "/dev/i2c-$BUS" ]; then
     if command -v raspi-config >/dev/null; then
         raspi-config nonint do_i2c 0
         modprobe i2c-dev || true
+    else
+        # Armbian (a Nebra's ROCK Pi 4): the device nodes from the i2c-dev module (verify on a Nebra).
+        modprobe i2c-dev || true
+        [ -f /etc/modules-load.d/i2c-dev.conf ] || echo i2c-dev > /etc/modules-load.d/i2c-dev.conf
     fi
     [ -e "/dev/i2c-$BUS" ] || die "/dev/i2c-$BUS missing: enable I2C (raspi-config, Interface Options)"
 fi

@@ -9,10 +9,11 @@
 #
 # Only for other cases (KEY=VALUE, one per line; empty means the default):
 
-# RECOMMENDED: a setup password (8 to 63 characters). The atom's setup Wi-Fi ("Neon Setup ...")
-# then needs it, and the setup page asks for it once: nobody who finds the atom before you can set
-# it up as theirs. Empty: an open setup Wi-Fi and no code (a key backup is restored only after the
-# setup then). Writing your Wi-Fi in Raspberry Pi Imager (or below) also avoids the setup Wi-Fi.
+# A setup password (8 to 63 characters). The atom's setup Wi-Fi ("Neon Setup ...") needs it, and
+# the setup page asks for it once: nobody who finds the atom before you can set it up as theirs.
+# Empty: the atom makes one (8 digits) and writes it in neon-status.txt on this card at its first
+# start (read it on any computer). Writing your Wi-Fi in Raspberry Pi Imager (or below) also
+# avoids the setup Wi-Fi.
 # Letters, digits, spaces and the usual signs only. It stays in this file (and is the atom's
 # setup Wi-Fi password later too): keep the card to yourself.
 NEON_SETUP_PASSWORD=

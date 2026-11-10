@@ -36,6 +36,8 @@ echo "$n" > "$STATE/update.attempts"
 # other start before neond confirmed the update follows a crash or an exit.
 if [ "$n" -gt 1 ] && [ -f "$BIN.prev" ]; then
     mv -f "$BIN.prev" "$BIN"
+    # On the card before the marker moves (a cut between the two must not keep the bad release).
+    sync
     # The marker names the version that failed: automatic updates do not install it again.
     mv -f "$STATE/update.json" "$STATE/update.rolledback"
     rm -f "$STATE/update.attempts" "$STATE/update.boot"
