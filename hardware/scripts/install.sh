@@ -91,6 +91,11 @@ mkdir -p "$SRC"
 # When the patch file changes, the source is reset to the tag and re-patched, then cleaned.
 # fetch NAME TAG PATCH COMMIT: the tag's commit is checked (a tag can be moved; this runs as root).
 fetch() {
+    # A clone cut short (the power went on the first start): made again, not an error for good.
+    if [ -d "$SRC/$1" ] && ! git -C "$SRC/$1" rev-parse --verify -q HEAD >/dev/null 2>&1; then
+        echo "$1: an unfinished download, fetched again"
+        rm -rf "${SRC:?}/${1:?}"
+    fi
     if [ ! -d "$SRC/$1" ]; then
         git clone --depth 1 --branch "$2" "https://github.com/Lora-net/$1.git" "$SRC/$1"
     fi
