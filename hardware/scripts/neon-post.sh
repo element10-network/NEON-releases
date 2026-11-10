@@ -86,6 +86,13 @@ for n in $waiting; do
     mv "$KEEP/epoch-$n.json.part" "$KEEP/epoch-$n.json"
     [ "$n" -gt 0 ] || { echo "epoch 0 is not computed again here (genesis): post it by hand" >&2; exit 1; }
     remote prev "$n" > "$KEEP/epoch-$((n - 1)).json.part"
+    # The previous result as this machine kept it when it posted it (it carries state the root
+    # does not cover: wallets named before, amounts held, onboarded hotspots, earlier roots): the
+    # electrode's copy must be the same file.
+    if [ -s "$KEEP/epoch-$((n - 1)).json" ] && ! cmp -s "$KEEP/epoch-$((n - 1)).json" "$KEEP/epoch-$((n - 1)).json.part"; then
+        echo "epoch $((n - 1)) on the electrode differs from the one posted from here: epoch $n not posted" >&2
+        exit 1
+    fi
     mv "$KEEP/epoch-$((n - 1)).json.part" "$KEEP/epoch-$((n - 1)).json"
     # The previous result must be the one on chain (checked against its posted root).
     tok check "$KEEP/epoch-$((n - 1)).json" || { echo "epoch $((n - 1)) does not match the root on chain: epoch $n not posted" >&2; exit 1; }

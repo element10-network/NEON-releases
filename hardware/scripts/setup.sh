@@ -118,7 +118,7 @@ asset() {
 vle() { [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n 1)" = "$1" ]; }
 # An older release is never installed from here: making an old release the newest cannot bring back
 # its unchecked scripts or fixed bugs. Raised with each stable release (the one before it).
-MIN_RELEASE=0.7.4
+MIN_RELEASE=0.7.5
 # The scripts run as root: unless a branch or tag is given (or the private source is used), they
 # come from the newest release's tag and must match the tree hash its signed scripts.txt names.
 # Every failure stops the install (a download that fails is not "an older release").
@@ -277,6 +277,14 @@ download_release() {
     asset "$name" "$tmp/neond" || return 1
     [ "$(wc -c < "$tmp/neond")" = "$size" ] || { echo "size mismatch"; return 2; }
     echo "$sha  $tmp/neond" | sha256sum -c --quiet - || { echo "SHA-256 mismatch"; return 2; }
+    # A newer neond already here (a development atom running setup.sh again): kept, not put back a
+    # version (atoms never install a lower one; NEON_DOWNGRADE=1 to do it anyway).
+    new_v=$(sed -n 's/^version //p' "$tmp/release.txt")
+    cur_v=$("$BIN" --version 2>/dev/null | awk '{print $NF}'); cur_v=${cur_v%%+*}
+    if [ -n "$cur_v" ] && [ "$cur_v" != "$new_v" ] && vle "$new_v" "$cur_v" && [ "${NEON_DOWNGRADE:-0}" != 1 ]; then
+        echo "keeping neond $cur_v (newer than release $new_v; NEON_DOWNGRADE=1 to install it anyway)"
+        return 0
+    fi
     # It takes the old one's place only once it runs here (a binary built for another libc
     # or target would otherwise leave the atom with no working neond).
     install -m 755 "$tmp/neond" "$BIN.new" || return 1
