@@ -20,6 +20,11 @@
 #   SSH_KEY=/var/lib/neon-post/ssh/id_ed25519
 #   NEON_ORACLE=/home/ne/NEON/target/release/neon-oracle   computes each epoch again here
 #   TREASURY=<address>   the treasury's wallet (as in the electrode's epoch.conf)
+#   CORE_HUBS="<peer id> <peer id>"   only when the core electrodes change: the new list (each epoch
+#                                     takes the previous posted epoch's; a change the electrode
+#                                     asks for is refused unless named here)
+#   EXCUSE="2026-11-17:<peer id> ..."  days of a core electrode let through without its log: only
+#                                     these (the electrode's word alone is not taken)
 #   LOCAL_EPOCHS=/var/lib/neon/reports/epochs   an electrode on this machine too: it gets each
 #                                              posted epoch, so its own claim answers stay current
 #                                              (default: this directory, when it exists; this
@@ -29,6 +34,8 @@ CONF=${NEON_POST_CONF:-/etc/neon/post.conf}
 [ -f "$CONF" ] || { echo "no settings: $CONF"; exit 1; }
 . "$CONF"
 : "${NEON_TOKEN:?}" "${KEYPAIR:?}" "${REMOTE:?}" "${SSH_KEY:?}"
+CORE_HUBS=${CORE_HUBS:-}
+EXCUSE=${EXCUSE:-}
 : "${NEON_ORACLE:?NEON_ORACLE missing in $CONF: each epoch is computed again here before it is posted}"
 : "${TREASURY:?TREASURY missing in $CONF (the treasury wallet, as in the electrode's epoch.conf)}"
 URL=${URL:-devnet}
@@ -106,17 +113,38 @@ for n in $waiting; do
     # electrode's run gives another root, and the epoch waits (compute it again on the electrode).
     tok hubs > "$work/hubs.json"
     prev="$KEEP/epoch-$((n - 1)).json"
+    # What decides whom the computation trusts is not taken from the electrode alone (review
+    # 2026-11-11: a compromised electrode could drop the core hubs, excuse their days, or add
+    # hotspots): the core hubs are the previous posted epoch's, or the new list named in post.conf.
+    theirs_core=$(jq -r '.core_hubs // [] | sort | join(" ")' "$KEEP/epoch-$n.json")
+    prev_core=$(jq -r '.core_hubs // [] | sort | join(" ")' "$prev")
+    conf_core=$(printf '%s\n' $CORE_HUBS | sort | tr '\n' ' ' | sed 's/ $//')
+    # A previous epoch from before core hubs were recorded: the electrode's list, once (shown).
+    if [ -z "$prev_core" ]; then
+        echo "epoch $n: epoch $((n - 1)) names no core hubs: the electrode's list taken"
+    elif [ "$theirs_core" != "$prev_core" ] && [ "$theirs_core" != "$conf_core" ]; then
+        echo "epoch $n: the electrode's core hubs ($theirs_core) are not epoch $((n - 1))'s ($prev_core): not posted (if the change is right, name the new list in CORE_HUBS in $CONF)" >&2
+        exit 1
+    fi
     set -- --launch "$(jq -r .launch "$prev")" --treasury "$TREASURY" --epoch "$n" \
         --previous "$prev" --hubs "$work/hubs.json" --core-hubs "$KEEP/epoch-$n.json" --out "$work/epoch-$n.json"
-    echo "epoch $n: core hubs $(jq -c '.core_hubs // []' "$KEEP/epoch-$n.json")"
+    echo "epoch $n: core hubs $theirs_core"
     from=$(jq -r '.hardware_from // ""' "$prev")
     if [ -n "$from" ]; then
         set -- "$@" --hardware-from "$from" --onboarded "$KEEP/epoch-$n.json"
+        added=$(jq -r --slurpfile p "$prev" '(.onboarded // []) - ($p[0].onboarded // []) | length' "$KEEP/epoch-$n.json")
+        echo "epoch $n: $added hotspot(s) onboarded since epoch $((n - 1)) (the electrode's lookup on Helium)"
     fi
+    set -f
     for x in $(jq -r '.excused // [] | .[]' "$KEEP/epoch-$n.json"); do
-        echo "epoch $n: the electrode let through $x (no log of that core hub that day)"
+        case " $EXCUSE " in
+            *" $x "*) ;;
+            *) echo "epoch $n: the electrode let through $x (no log of that core hub that day), not named in EXCUSE in $CONF: not posted" >&2; exit 1 ;;
+        esac
+        echo "epoch $n: let through $x (no log of that core hub that day; EXCUSE in $CONF)"
         set -- "$@" --excuse "$x"
     done
+    set +f
     if ! "$NEON_ORACLE" "$@" "$work"; then
         rm -rf "$work"
         echo "epoch $n could not be computed here: not posted" >&2
