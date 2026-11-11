@@ -118,7 +118,7 @@ asset() {
 vle() { [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n 1)" = "$1" ]; }
 # An older release is never installed from here: making an old release the newest cannot bring back
 # its unchecked scripts or fixed bugs. Raised with each stable release (the one before it).
-MIN_RELEASE=0.7.6
+MIN_RELEASE=0.7.7
 # The scripts run as root: unless a branch or tag is given (or the private source is used), they
 # come from the newest release's tag and must match the tree hash its signed scripts.txt names.
 # Every failure stops the install (a download that fails is not "an older release").
@@ -270,6 +270,9 @@ download_release() {
     if [ -n "$VERSION" ] && [ "$(sed -n 's/^version //p' "$tmp/release.txt")" != "$VERSION" ]; then
         echo "release.txt is not for $VERSION"; return 2
     fi
+    # Never older than MIN_RELEASE, whichever way the release was chosen (NEON_REF installs too:
+    # an old signed release marked latest must not go on a fresh card).
+    vle "$MIN_RELEASE" "$(sed -n 's/^version //p' "$tmp/release.txt")" || { echo "release older than $MIN_RELEASE: refused"; return 2; }
     line=$(grep "^file $TARGET " "$tmp/release.txt") || { echo "no release binary for $TARGET"; return 1; }
     name=$(echo "$line" | cut -d' ' -f3)
     size=$(echo "$line" | cut -d' ' -f4)
