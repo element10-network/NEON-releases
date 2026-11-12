@@ -6,9 +6,14 @@
 <title>Neon Network</title>
 <meta name="description" content="A community radio network built from retired Helium hotspots: Meshtastic for everyone around them, linked over the internet.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%22-6 -41 207 207%22 fill=%22%23e8402a%22%3E%3Cpath d=%22M80.03,125.05c-5.52,0-10-4.48-10-10V45.02s-.13-6.99-3.57-13.53c-4.07-7.73-11.08-11.49-21.44-11.49s-17.37,3.76-21.44,11.49c-3.44,6.54-3.57,13.52-3.57,13.59v69.97c0,5.52-4.48,10-10,10S0,120.57,0,115.05V45.02c0-1.14.15-11.42,5.43-21.98C12.86,8.18,26.92,0,45.02,0s32.16,8.18,39.58,23.04c5.28,10.56,5.43,20.84,5.43,21.98v70.03c0,5.52-4.48,10-10,10Z%22/%3E%3Cpath d=%22M150.06,125.05c-1.14,0-11.42-.15-21.98-5.43-14.85-7.43-23.04-21.49-23.04-39.58v-35.02c0-1.14.15-11.42,5.43-21.98C117.91,8.18,131.97,0,150.06,0s32.16,8.18,39.58,23.04c5.28,10.56,5.43,20.84,5.43,21.98s-.15,11.42-5.43,21.98c-7.43,14.85-21.49,23.04-39.58,23.04-5.52,0-10-4.48-10-10s4.48-10,10-10c10.36,0,17.37-3.76,21.44-11.49,3.27-6.2,3.55-12.81,3.57-13.53-.02-.72-.31-7.32-3.57-13.53-4.07-7.73-11.08-11.49-21.44-11.49s-17.37,3.76-21.44,11.49c-3.44,6.54-3.57,13.52-3.57,13.59v34.95c0,10.36,3.76,17.37,11.49,21.44,6.54,3.44,13.52,3.57,13.59,3.57,5.52,0,9.97,4.48,9.97,10s-4.51,10-10.03,10Z%22/%3E%3C/svg%3E">
-<!-- The landing page at https://element10.network (owner, 2026-11-03). Static: no scripts, fonts or
-     trackers. Served by Caddy on eu1 from the public NEON-releases copy (docs/HUB.md). -->
+<!-- The landing page at https://element10.network (owner, 2026-11-03). Static: no scripts or trackers,
+     nothing from other sites. Served by Caddy on eu1 from the public NEON-releases copy (docs/HUB.md). -->
 <style>
+  /* The fonts of the finder, the explorer and the panel (the public pages share one look, owner 2026-11-12):
+     Inter, a copy in fonts/ next to this page (SIL Open Font License; the same files
+     as crates/neond/src/web/fonts, .github/check-scripts.sh checks it). */
+  @font-face { font-family: "Inter"; font-style: normal; font-weight: 100 900; font-display: block; src: url(fonts/inter-latin-ext.woff2) format("woff2"); unicode-range: U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF; }
+  @font-face { font-family: "Inter"; font-style: normal; font-weight: 100 900; font-display: block; src: url(fonts/inter-latin.woff2) format("woff2"); unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
   :root {
     --bg: #f6f9fb; --panel: #ffffff; --text: #18212a; --heading: #3c4a57; --muted: #617383; --line: #dfe6ec;
     --accent: #cc3f1c; --on-accent: #ffffff; --chip: #eef2f5;
@@ -20,7 +25,7 @@
             --accent: #ff8a6b; --on-accent: #14100e; --chip: #1b242e; }
   }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.55 "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
   a { color: var(--accent); }
   .wrap { max-width: 1040px; margin: 0 auto; padding: var(--page); display: grid; gap: var(--page); }
   .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); }
