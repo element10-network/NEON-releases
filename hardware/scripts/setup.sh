@@ -118,7 +118,7 @@ asset() {
 vle() { [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n 1)" = "$1" ]; }
 # An older release is never installed from here: making an old release the newest cannot bring back
 # its unchecked scripts or fixed bugs. Raised with each stable release (the one before it).
-MIN_RELEASE=0.7.11
+MIN_RELEASE=0.7.12
 # The scripts run as root: unless a branch or tag is given (or the private source is used), they
 # come from the newest release's tag and must match the tree hash its signed scripts.txt names.
 # Every failure stops the install (a download that fails is not "an older release").
@@ -144,7 +144,8 @@ if [ -z "$REF" ] && [ "$FROM" = "$GH_REPO" ]; then
 elif [ "$FROM" = "$GH_REPO" ]; then
     echo "NEON_REF=$REF: the scripts are not checked against a release"
 fi
-[ -n "$REF" ] || REF=main
+# The stable branch (main is retired, frozen at 0.4.207).
+[ -n "$REF" ] || REF=stable
 case "$REF" in -*) die "NEON_REF may not start with -" ;; esac
 # git with the token as an HTTP header (not stored in the repository's config).
 git_gh() {
@@ -292,10 +293,20 @@ download_release() {
     # or target would otherwise leave the atom with no working neond).
     install -m 755 "$tmp/neond" "$BIN.new" || return 1
     "$BIN.new" --version >/dev/null 2>&1 || { echo "the release binary does not run here"; rm -f "$BIN.new"; return 1; }
+    if hash_kept && ! reads_hash "$BIN.new"; then
+        echo "release $new_v cannot read the panel password kept as a hash in $PREFIX/neond.toml: refused"
+        rm -f "$BIN.new"; return 2
+    fi
     mv -f "$BIN.new" "$BIN" || return 1
     forget_update_guard
     echo "installed release $(sed -n 's/^version //p' "$tmp/release.txt")"
 }
+
+# A panel password kept as a hash (0.7.12 and newer) is read only by 0.7.12 and newer: an older
+# neond would take the hash for the password and nobody could log in (review 2026-11-12).
+HASH_FROM=0.7.12
+hash_kept() { grep -q '^web_password *= *"\$argon2' "$PREFIX/neond.toml" 2>/dev/null; }
+reads_hash() { v=$("$1" --version 2>/dev/null | awk '{print $NF}'); v=${v%%+*}; [ -n "$v" ] && vle "$HASH_FROM" "$v"; }
 
 # A binary installed here is no update on probation: the guard's files go (else a later crash
 # would put an older neond.prev back over it and call this release a failure).
@@ -311,6 +322,11 @@ build_from_source() {
     (cd "$REPO" && cargo build --release --locked -p neond)
     install -m 755 "$REPO/target/release/neond" "$BIN.new"
     "$BIN.new" --version >/dev/null
+    if hash_kept && ! reads_hash "$BIN.new"; then
+        rm -f "$BIN.new"; die "this neond cannot read the panel password kept as a hash in $PREFIX/neond.toml"
+    fi
+    built=$("$BIN.new" --version | awk '{print $NF}'); built=${built%%+*}
+    vle "$MIN_RELEASE" "$built" || { rm -f "$BIN.new"; die "neond $built from $REF is older than $MIN_RELEASE: not installed"; }
     mv -f "$BIN.new" "$BIN"
     forget_update_guard
 }

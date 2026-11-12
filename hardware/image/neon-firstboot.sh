@@ -202,6 +202,9 @@ if [ -n "$SETUP_PW" ]; then
     # The installed atom's setup Wi-Fi (neon-hotspot.sh) keeps the same password.
     q=$(printf '%s' "$SETUP_PW" | sed "s/'/'\\\\''/g")
     (umask 077 && printf "HOTSPOT_PASSWORD='%s'\n" "$q" > /opt/neon/hotspot.conf)
+    # Kept on the atom now: not left readable on the card's open partition (a password reused
+    # elsewhere; neon-status.txt shows the code for the setup page).
+    sed -i 's/^\([[:space:]]*NEON_SETUP_PASSWORD[[:space:]]*=\).*/\1/' "$CONF"
 fi
 status "waiting for the network"
 # No network after 2 minutes: the atom opens its setup Wi-Fi, "Neon Setup XXXX" (the same as the

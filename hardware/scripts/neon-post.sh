@@ -152,12 +152,26 @@ for n in $waiting; do
     fi
     mine=$(jq -r .root "$work/epoch-$n.json")
     theirs=$(jq -r .root "$KEEP/epoch-$n.json")
-    rm -rf "$work"
     if [ "$mine" != "$theirs" ]; then
+        rm -rf "$work"
         echo "epoch $n: computed here $mine, the electrode's $theirs: NOT posted (compare the inputs and the registry)" >&2
         exit 1
     fi
-    echo "epoch $n computed here with the same root: $mine"
+    # The whole result, not only the root (review 2026-11-12): the wallets named, the amounts held,
+    # the earlier roots and the onboarded list are carried to the next epoch and the root does not
+    # cover them. This machine's own result is the one posted and kept; the electrode's must be the
+    # same (computed from the same inputs, nothing in it depends on where it ran).
+    jq -S . "$work/epoch-$n.json" > "$work/mine.sorted"
+    jq -S . "$KEEP/epoch-$n.json" > "$work/theirs.sorted"
+    if ! cmp -s "$work/mine.sorted" "$work/theirs.sorted"; then
+        diff "$work/mine.sorted" "$work/theirs.sorted" | head -n 20 >&2
+        rm -rf "$work"
+        echo "epoch $n: the same root, but the electrode's result differs from this machine's in what it carries to the next epoch (above): NOT posted" >&2
+        exit 1
+    fi
+    mv "$work/epoch-$n.json" "$KEEP/epoch-$n.json"
+    rm -rf "$work"
+    echo "epoch $n computed here with the same root and the same result: $mine"
     tok post "$KEEP/epoch-$n.json" --previous "$prev"
     remote done "$n"
     file_local "$n"
