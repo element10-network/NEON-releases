@@ -25,6 +25,10 @@
 #                                     asks for is refused unless named here)
 #   EXCUSE="2026-11-17:<peer id> ..."  days of a core electrode let through without its log: only
 #                                     these (the electrode's word alone is not taken)
+#   CLAWBACK="N:<wallet>:<amount> ..."  over-claims recorded with epoch N (smallest units, owed back
+#                                     from the wallet's later earnings): only these, as the
+#                                     electrode's epoch.conf names them
+#   HELIUM_RPC=https://api.mainnet-beta.solana.com   where each newly onboarded hotspot is looked up
 #   LOCAL_EPOCHS=/var/lib/neon/reports/epochs   an electrode on this machine too: it gets each
 #                                              posted epoch, so its own claim answers stay current
 #                                              (default: this directory, when it exists; this
@@ -36,6 +40,8 @@ CONF=${NEON_POST_CONF:-/etc/neon/post.conf}
 : "${NEON_TOKEN:?}" "${KEYPAIR:?}" "${REMOTE:?}" "${SSH_KEY:?}"
 CORE_HUBS=${CORE_HUBS:-}
 EXCUSE=${EXCUSE:-}
+CLAWBACK=${CLAWBACK:-}
+HELIUM_RPC=${HELIUM_RPC:-https://api.mainnet-beta.solana.com}
 : "${NEON_ORACLE:?NEON_ORACLE missing in $CONF: each epoch is computed again here before it is posted}"
 : "${TREASURY:?TREASURY missing in $CONF (the treasury wallet, as in the electrode's epoch.conf)}"
 URL=${URL:-devnet}
@@ -80,7 +86,22 @@ for n in $waiting; do
             echo "epoch $n: not filed: its file could not be matched with the root on chain (the reason above; a NEON-token CLI older than bd12b03 has no 'check': rebuild it)" >&2
             exit 1
         fi
-        mv "$KEEP/epoch-$n.json.part" "$KEEP/epoch-$n.json"
+        # Kept here already (posted from here): the electrode's copy must be that same file. It
+        # carries what the root does not cover (wallets named, amounts held, onboarded hotspots,
+        # core hubs, the hardware rule) and becomes the next epoch's previous (review 2026-11-13).
+        if [ -s "$KEEP/epoch-$n.json" ]; then
+            if ! cmp -s "$KEEP/epoch-$n.json" "$KEEP/epoch-$n.json.part"; then
+                rm -f "$KEEP/epoch-$n.json.part"
+                echo "epoch $n: the electrode's file differs from the one posted from here ($KEEP/epoch-$n.json): not filed (copy this machine's file to the electrode's epochs/ by hand)" >&2
+                exit 1
+            fi
+            rm -f "$KEEP/epoch-$n.json.part"
+        else
+            # Posted by hand elsewhere: the electrode's word on what the root does not cover.
+            echo "epoch $n: none kept here, the electrode's file taken (its onboarded hotspots are all looked up on Helium with the next epoch)" >&2
+            mv "$KEEP/epoch-$n.json.part" "$KEEP/epoch-$n.json"
+            : > "$KEEP/epoch-$n.json.from-electrode"
+        fi
         remote done "$n"
         file_local "$n"
         continue
@@ -89,8 +110,11 @@ for n in $waiting; do
         echo "epoch $n waits for epoch $next, which is not on chain: not posted" >&2
         exit 1
     fi
-    remote get "$n" > "$KEEP/epoch-$n.json.part"
-    mv "$KEEP/epoch-$n.json.part" "$KEEP/epoch-$n.json"
+    # The electrode's result, apart from what is kept here (only this machine's own result,
+    # computed below, is kept as epoch-N.json).
+    theirs_file="$KEEP/epoch-$n.electrode.json"
+    remote get "$n" > "$theirs_file.part"
+    mv "$theirs_file.part" "$theirs_file"
     [ "$n" -gt 0 ] || { echo "epoch 0 is not computed again here (genesis): post it by hand" >&2; exit 1; }
     remote prev "$n" > "$KEEP/epoch-$((n - 1)).json.part"
     # The previous result as this machine kept it when it posted it (it carries state the root
@@ -99,6 +123,13 @@ for n in $waiting; do
     if [ -s "$KEEP/epoch-$((n - 1)).json" ] && ! cmp -s "$KEEP/epoch-$((n - 1)).json" "$KEEP/epoch-$((n - 1)).json.part"; then
         echo "epoch $((n - 1)) on the electrode differs from the one posted from here: epoch $n not posted" >&2
         exit 1
+    fi
+    # None kept here (or one taken from the electrode): its carried state is the electrode's word,
+    # so every onboarded hotspot in it is looked up below, not only the new ones.
+    audit_all=0
+    if [ ! -s "$KEEP/epoch-$((n - 1)).json" ] || [ -e "$KEEP/epoch-$((n - 1)).json.from-electrode" ]; then
+        audit_all=1
+        echo "epoch $n: epoch $((n - 1)) was not computed here: its onboarded hotspots are all looked up on Helium" >&2
     fi
     mv "$KEEP/epoch-$((n - 1)).json.part" "$KEEP/epoch-$((n - 1)).json"
     # The previous result must be the one on chain (checked against its posted root).
@@ -116,7 +147,7 @@ for n in $waiting; do
     # What decides whom the computation trusts is not taken from the electrode alone (review
     # 2026-11-11: a compromised electrode could drop the core hubs, excuse their days, or add
     # hotspots): the core hubs are the previous posted epoch's, or the new list named in post.conf.
-    theirs_core=$(jq -r '.core_hubs // [] | sort | join(" ")' "$KEEP/epoch-$n.json")
+    theirs_core=$(jq -r '.core_hubs // [] | sort | join(" ")' "$theirs_file")
     prev_core=$(jq -r '.core_hubs // [] | sort | join(" ")' "$prev")
     conf_core=$(printf '%s\n' $CORE_HUBS | sort | tr '\n' ' ' | sed 's/ $//')
     # A previous epoch from before core hubs were recorded: the electrode's list, once (shown).
@@ -127,16 +158,45 @@ for n in $waiting; do
         exit 1
     fi
     set -- --launch "$(jq -r .launch "$prev")" --treasury "$TREASURY" --epoch "$n" \
-        --previous "$prev" --hubs "$work/hubs.json" --core-hubs "$KEEP/epoch-$n.json" --out "$work/epoch-$n.json"
+        --previous "$prev" --hubs "$work/hubs.json" --core-hubs "$theirs_file" --out "$work/epoch-$n.json"
     echo "epoch $n: core hubs $theirs_core"
     from=$(jq -r '.hardware_from // ""' "$prev")
     if [ -n "$from" ]; then
-        set -- "$@" --hardware-from "$from" --onboarded "$KEEP/epoch-$n.json"
-        added=$(jq -r --slurpfile p "$prev" '(.onboarded // []) - ($p[0].onboarded // []) | length' "$KEEP/epoch-$n.json")
-        echo "epoch $n: $added hotspot(s) onboarded since epoch $((n - 1)) (the electrode's lookup on Helium)"
+        set -- "$@" --hardware-from "$from" --onboarded "$theirs_file"
+        # Each hotspot the electrode added since the previous epoch, looked up on Helium (its
+        # onboarding account on Solana mainnet) from here too (owner 2026-11-12): the electrode's
+        # word alone does not let a chip earn. No answer: not posted (try again later).
+        added=0
+        # Base58 addresses only (anything else stops the post); the new ones, or all of them when the
+        # previous epoch is the electrode's word. With globbing off: they come from the electrode.
+        set -f
+        if [ "$audit_all" = 1 ]; then which='(.onboarded // [])'; else which='(.onboarded // []) - ($p[0].onboarded // [])'; fi
+        list=$(jq -e -r --slurpfile p "$prev" "$which"' | if all(.[]; type == "string" and test("^[1-9A-HJ-NP-Za-km-z]{20,64}$")) then .[] else error("not a Helium address") end' "$theirs_file") ||
+            { [ $? -eq 4 ] || { echo "epoch $n: the electrode's onboarded list is not a list of Helium addresses: not posted" >&2; exit 1; }; }
+        for h in $list; do
+            acct=$("$NEON_ORACLE" --onboarding-account "$h") || { echo "epoch $n: $h is not a Helium address: not posted" >&2; exit 1; }
+            owner=error
+            # A public RPC limits each address: a few tries, a pause between hotspots.
+            for try in 1 2 3; do
+                resp=$(curl -fsS -m 30 "$HELIUM_RPC" -H 'Content-Type: application/json' \
+                    -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"getAccountInfo\",\"params\":[\"${acct% *}\",{\"encoding\":\"base64\",\"dataSlice\":{\"offset\":0,\"length\":0}}]}") || resp=""
+                owner=$(printf '%s' "$resp" | jq -r 'if (.result | type) == "object" then (.result.value.owner // "none") else "error" end' 2>/dev/null) || owner=error
+                [ -n "$owner" ] || owner=error
+                [ "$owner" = error ] || break
+                sleep $((try * 5))
+            done
+            case "$owner" in
+                "${acct#* }") added=$((added + 1)) ;;
+                error) echo "epoch $n: Helium's onboarding of $h could not be looked up ($HELIUM_RPC): not posted (try again later)" >&2; exit 1 ;;
+                *) echo "epoch $n: the electrode lists $h as onboarded, but Helium does not: not posted" >&2; exit 1 ;;
+            esac
+            sleep 1
+        done
+        set +f
+        echo "epoch $n: $added hotspot(s) looked up on Helium from here, each onboarded"
     fi
     set -f
-    for x in $(jq -r '.excused // [] | .[]' "$KEEP/epoch-$n.json"); do
+    for x in $(jq -r '.excused // [] | .[]' "$theirs_file"); do
         case " $EXCUSE " in
             *" $x "*) ;;
             *) echo "epoch $n: the electrode let through $x (no log of that core hub that day), not named in EXCUSE in $CONF: not posted" >&2; exit 1 ;;
@@ -144,14 +204,37 @@ for n in $waiting; do
         echo "epoch $n: let through $x (no log of that core hub that day; EXCUSE in $CONF)"
         set -- "$@" --excuse "$x"
     done
+    # Over-claims: only those named in post.conf, and exactly the electrode's (the same input).
+    theirs_cb=$(jq -r '(.clawback // {}) | to_entries | map("'"$n"':\(.key):\(.value|tostring)") | sort | join(" ")' "$theirs_file")
+    # Exactly the ones named here for this epoch, both ways (one left out by the electrode would
+    # be lost for good: it is recorded with its epoch only). Each N:<wallet>:<amount>.
+    mine_cb=""
+    for x in $CLAWBACK; do
+        case "$x" in
+            *[!0-9A-Za-z:]* | *:*:*:* | :* | *: | *::*) echo "CLAWBACK in $CONF: $x is not N:<wallet>:<amount>" >&2; exit 1 ;;
+            [0-9]*:*:[1-9]*) ;;
+            *) echo "CLAWBACK in $CONF: $x is not N:<wallet>:<amount> (the amount above 0)" >&2; exit 1 ;;
+        esac
+        case "$x" in "$n":*) mine_cb="$mine_cb $x" ;; esac
+    done
+    mine_cb=$(printf '%s\n' $mine_cb | sort | tr '\n' ' ' | sed 's/ *$//')
+    if [ "$mine_cb" != "$theirs_cb" ]; then
+        echo "epoch $n: the electrode recorded the over-claims [$theirs_cb], CLAWBACK in $CONF names [$mine_cb] for it: not posted" >&2
+        exit 1
+    fi
+    for x in $theirs_cb; do echo "epoch $n: over-claim $x recorded (CLAWBACK in $CONF)"; done
     set +f
+    if [ -n "$theirs_cb" ]; then
+        jq '.clawback' "$theirs_file" > "$work/clawback.json"
+        set -- "$@" --clawback "$work/clawback.json"
+    fi
     if ! "$NEON_ORACLE" "$@" "$work"; then
         rm -rf "$work"
         echo "epoch $n could not be computed here: not posted" >&2
         exit 1
     fi
     mine=$(jq -r .root "$work/epoch-$n.json")
-    theirs=$(jq -r .root "$KEEP/epoch-$n.json")
+    theirs=$(jq -r .root "$theirs_file")
     if [ "$mine" != "$theirs" ]; then
         rm -rf "$work"
         echo "epoch $n: computed here $mine, the electrode's $theirs: NOT posted (compare the inputs and the registry)" >&2
@@ -162,7 +245,7 @@ for n in $waiting; do
     # cover them. This machine's own result is the one posted and kept; the electrode's must be the
     # same (computed from the same inputs, nothing in it depends on where it ran).
     jq -S . "$work/epoch-$n.json" > "$work/mine.sorted"
-    jq -S . "$KEEP/epoch-$n.json" > "$work/theirs.sorted"
+    jq -S . "$theirs_file" > "$work/theirs.sorted"
     if ! cmp -s "$work/mine.sorted" "$work/theirs.sorted"; then
         diff "$work/mine.sorted" "$work/theirs.sorted" | head -n 20 >&2
         rm -rf "$work"
@@ -170,6 +253,7 @@ for n in $waiting; do
         exit 1
     fi
     mv "$work/epoch-$n.json" "$KEEP/epoch-$n.json"
+    rm -f "$theirs_file" "$KEEP/epoch-$n.json.from-electrode"
     rm -rf "$work"
     echo "epoch $n computed here with the same root and the same result: $mine"
     tok post "$KEEP/epoch-$n.json" --previous "$prev"

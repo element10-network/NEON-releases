@@ -31,6 +31,9 @@
 #                              others' batches count when electrodes of two operators logged them
 #                              (third-party electrodes, owner 2026-11-08). Empty: the previous
 #                              epoch's list (none before it was ever set); none: every hub's alone.
+#   CLAWBACK="N:<wallet>:<amount> ..."  over-claims found, recorded with epoch N (smallest units):
+#                              owed back from the wallet's later earnings (owner 2026-11-12). Name
+#                              the same in hq's post.conf, or the post is refused.
 set -eu
 export RUST_BACKTRACE=0
 CONF=${NEON_EPOCH_CONF:-/etc/neon/epoch.conf}
@@ -109,6 +112,28 @@ elif [ -n "${CORE_HUBS:-}" ]; then
     # Separated by spaces or commas; neon-oracle refuses anything that is not a registered hub.
     printf '%s\n' "$CORE_HUBS" | tr ', \t' '\n\n\n' | awk 'BEGIN { printf "[" } NF { printf "%s\"%s\"", (n++ ? "," : ""), $1 } END { print "]" }' > "$WORK/core-hubs.json"
     set -- "$@" --core-hubs "$WORK/core-hubs.json"
+fi
+# Over-claims named for this epoch only (a line left in the file is not recorded again).
+# Every entry N:<wallet>:<amount> (a malformed one is refused, not skipped: it would be lost with
+# its epoch), the amount above 0 without leading zeros, one per wallet and epoch.
+cb="" wallets=" "
+for x in ${CLAWBACK:-}; do
+    case "$x" in
+        *[!0-9A-Za-z:]* | *:*:*:* | :* | *: | *::*) echo "CLAWBACK in $CONF: $x is not N:<wallet>:<amount>"; exit 1 ;;
+        [0-9]*:*:[1-9]*) ;;
+        *) echo "CLAWBACK in $CONF: $x is not N:<wallet>:<amount> (the amount above 0)"; exit 1 ;;
+    esac
+    e=${x%%:*} rest=${x#*:}
+    w=${rest%%:*} a=${rest#*:}
+    case "$e$a" in *[!0-9]*) echo "CLAWBACK in $CONF: $x: the epoch and the amount are numbers"; exit 1 ;; esac
+    [ "$e" = "$N" ] || continue
+    case "$wallets" in *" $w "*) echo "CLAWBACK in $CONF: $w named twice for epoch $N"; exit 1 ;; esac
+    wallets="$wallets$w "
+    cb="$cb${cb:+,}\"$w\":$a"
+done
+if [ -n "$cb" ]; then
+    printf '{%s}\n' "$cb" > "$WORK/clawback.json"
+    set -- "$@" --clawback "$WORK/clawback.json"
 fi
 [ "${FORCE:-0}" = 1 ] && set -- "$@" --force
 
