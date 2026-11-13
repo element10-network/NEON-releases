@@ -150,6 +150,16 @@ for n in $waiting; do
     theirs_core=$(jq -r '.core_hubs // [] | sort | join(" ")' "$theirs_file")
     prev_core=$(jq -r '.core_hubs // [] | sort | join(" ")' "$prev")
     conf_core=$(printf '%s\n' $CORE_HUBS | sort | tr '\n' ' ' | sed 's/ $//')
+    # A previous epoch taken from the electrode (none computed here) is the electrode's word on
+    # what it carries: it must name core hubs (or CORE_HUBS in post.conf names them), and the
+    # hardware rule (in force since before epoch 0), or a compromised electrode could drop both.
+    if [ "$audit_all" = 1 ]; then
+        [ -n "$prev_core" ] || [ -n "$conf_core" ] ||
+            { echo "epoch $n: epoch $((n - 1)) came from the electrode and names no core hubs: name them in CORE_HUBS in $CONF; not posted" >&2; exit 1; }
+        [ -n "$(jq -r '.hardware_from // ""' "$prev")" ] ||
+            { echo "epoch $n: epoch $((n - 1)) came from the electrode without the hardware rule: not posted" >&2; exit 1; }
+        if [ -z "$prev_core" ]; then prev_core=$conf_core; fi
+    fi
     # A previous epoch from before core hubs were recorded: the electrode's list, once (shown).
     if [ -z "$prev_core" ]; then
         echo "epoch $n: epoch $((n - 1)) names no core hubs: the electrode's list taken"
