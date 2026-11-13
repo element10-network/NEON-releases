@@ -160,6 +160,9 @@ for n in $waiting; do
             { echo "epoch $n: epoch $((n - 1)) came from the electrode without the hardware rule: not posted" >&2; exit 1; }
         if [ -z "$prev_core" ]; then prev_core=$conf_core; fi
     fi
+    # A result naming no core hubs would make every electrode's log count on its own (review
+    # 2026-11-13): refused, whatever the previous epoch named.
+    [ -n "$theirs_core" ] || { echo "epoch $n: the electrode's result names no core hubs: not posted" >&2; exit 1; }
     # A previous epoch from before core hubs were recorded: the electrode's list, once (shown).
     if [ -z "$prev_core" ]; then
         echo "epoch $n: epoch $((n - 1)) names no core hubs: the electrode's list taken"

@@ -45,7 +45,9 @@ case "$what" in
         cd "$REPORTS"
         list=$(mktemp)
         trap 'rm -f "$list"' EXIT
-        d=$start
+        # From the day before the epoch: rules v16 read it too (a report stamped just after
+        # midnight that reached a hub just before it), and the oracle requires the core hubs'.
+        d=$(date -u -d "$start - 1 day" +%F)
         i=0
         # File names spelled out below (globbing is off for the request, on for these: the dates
         # are digits and dashes only).
@@ -56,7 +58,7 @@ case "$what" in
             done
             [ "$d" = "$end" ] && break
             i=$((i + 1))
-            [ "$i" -le 8 ] || { echo "more than 8 days from $start to $end" >&2; exit 1; }
+            [ "$i" -le 9 ] || { echo "more than 9 days from the day before $start to $end" >&2; exit 1; }
             d=$(date -u -d "$d + 1 day" +%F)
         done
         set -f
