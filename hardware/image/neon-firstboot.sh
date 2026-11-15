@@ -175,7 +175,7 @@ fi
 # theirs). Empty: an open setup Wi-Fi and no code, as before (a key backup is then restored only
 # after the setup).
 SETUP_PW=$(raw NEON_SETUP_PASSWORD | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
-# None given (owner 2026-11-10): one is made, 8 digits, and written in neon-status.txt on the card
+# None given (owner 2026-11-10): one is made and written in neon-status.txt on the card
 # (read it on any computer): never an open setup Wi-Fi nor a panel anyone near can set up first.
 # A first boot run again (an install that failed, a power cut) finds neon.txt's field emptied below
 # and takes the kept one: shown in neon-status.txt only if it was made here, never the owner's own
@@ -185,8 +185,10 @@ if [ -z "$SETUP_PW" ]; then
         SETUP_PW=$(cat /opt/neon/setup-code)
         [ -e /opt/neon/setup-code.made ] && SETUP_PW_MADE=$SETUP_PW
     else
-        n=$(od -An -N4 -tu4 /dev/urandom | tr -d ' ')
-        SETUP_PW=$(printf '%08d' $((n % 100000000)))
+        # 12 letters and digits in groups of four, none that look alike (owner 2026-11-15).
+        SETUP_PW=$(tr -dc 23456789ABCDEFGHJKLMNPQRSTUVWXYZ < /dev/urandom 2>/dev/null | head -c 12 | sed 's/\(....\)\(....\)\(....\)/\1-\2-\3/')
+        # Never an empty one (an open setup Wi-Fi and panel).
+        [ "${#SETUP_PW}" = 14 ] || { status "could not make a setup code: restart"; exit 1; }
         SETUP_PW_MADE=$SETUP_PW
     fi
 fi

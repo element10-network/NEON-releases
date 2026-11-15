@@ -142,8 +142,11 @@ for n in $waiting; do
     remote logs "$n" | tar xzf - -C "$work" || { echo "epoch $n: its day logs could not be fetched: not posted" >&2; exit 1; }
     # The registry as the chain has it now: a hub registered (or a wallet changed) since the
     # electrode's run gives another root, and the epoch waits (compute it again on the electrode).
-    tok hubs > "$work/hubs.json"
     prev="$KEEP/epoch-$((n - 1)).json"
+    # With its history, as the electrode's run takes it (each day's registry from 2026-11-30).
+    tok hubs --history "$prev" > "$work/hubs.json"
+    jq -e 'has("changes")' "$work/hubs.json" >/dev/null ||
+        { echo "epoch $n: neon-token printed no registry history (older than NEON-token 1f07919: update it): not posted" >&2; exit 1; }
     # What decides whom the computation trusts is not taken from the electrode alone (review
     # 2026-11-11: a compromised electrode could drop the core hubs, excuse their days, or add
     # hotspots): the core hubs are the previous posted epoch's, or the new list named in post.conf.

@@ -11,7 +11,7 @@
 
 # A setup password (8 to 63 characters). The atom's setup Wi-Fi ("Neon Setup ...") needs it, and
 # the setup page asks for it once: nobody who finds the atom before you can set it up as theirs.
-# Empty: the atom makes one (8 digits) and writes it in neon-status.txt on this card at its first
+# Empty: the atom makes one (12 letters and digits, like 7KQ4-M2XP-9HTR) and writes it in neon-status.txt on this card at its first
 # start (read it on any computer). Writing your Wi-Fi in Raspberry Pi Imager (or below) also
 # avoids the setup Wi-Fi.
 # Letters, digits, spaces and the usual signs only. At its first start the atom keeps it (the setup
