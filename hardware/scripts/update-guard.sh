@@ -23,7 +23,7 @@ BIN=${NEON_BIN:-/usr/local/bin/neond}
 boot=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null || true)
 if [ -f "$STATE/update.alive" ] ||
     { [ -n "$boot" ] && [ "$(cat "$STATE/update.boot" 2>/dev/null)" != "$boot" ]; }; then
-    rm -f "$STATE/update.alive" "$STATE/update.attempts"
+    rm -f "$STATE/update.alive" "$STATE/update.attempts" /run/neon-update-started
 fi
 [ -n "$boot" ] && echo "$boot" > "$STATE/update.boot"
 n=$(cat "$STATE/update.attempts" 2>/dev/null || echo 0)
@@ -33,8 +33,10 @@ case "$n" in "" | *[!0-9]*) n=0 ;; esac
 n=$((n + 1))
 # A count that cannot be written (a full card) cannot count failed starts: such a start is taken as
 # one, or a crashing release would start again every few seconds for good.
+# Its first such start is told apart in /run (memory, always writable, empty at each boot): a full
+# card alone must not roll a healthy release back at once (review 2026-11-15).
 if ! echo "$n" > "$STATE/update.attempts" 2>/dev/null || [ "$(cat "$STATE/update.attempts" 2>/dev/null)" != "$n" ]; then
-    n=2
+    if [ -e /run/neon-update-started ]; then n=2; else : > /run/neon-update-started 2>/dev/null; n=1; fi
 fi
 # The first start after the update (or after a deliberate stop or a reboot) is n = 1; any
 # other start before neond confirmed the update follows a crash or an exit.

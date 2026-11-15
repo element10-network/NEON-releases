@@ -102,7 +102,7 @@ for n in $waiting; do
             mv "$KEEP/epoch-$n.json.part" "$KEEP/epoch-$n.json"
             : > "$KEEP/epoch-$n.json.from-electrode"
         fi
-        remote done "$n"
+        remote done "$n" "$(jq -S -c . "$KEEP/epoch-$n.json" | sha256sum | cut -c1-64)"
         file_local "$n"
         continue
     fi
@@ -270,6 +270,6 @@ for n in $waiting; do
     rm -rf "$work"
     echo "epoch $n computed here with the same root and the same result: $mine"
     tok post "$KEEP/epoch-$n.json" --previous "$prev"
-    remote done "$n"
+    remote done "$n" "$(jq -S -c . "$KEEP/epoch-$n.json" | sha256sum | cut -c1-64)"
     file_local "$n"
 done

@@ -26,7 +26,11 @@
             --accent: #ff6b49; --on-accent: #16181b; --soft: #46271f; }
   }
   * { box-sizing: border-box; }
-  html { background: var(--bg); }
+  /* A link to a section scrolls it to just under the header that stays on top (owner 2026-11-15: its heading was
+     hidden under the bar); none on a phone, where the header scrolls away. */
+  html { background: var(--bg); scroll-padding-top: calc(56px + 2 * var(--page)); scroll-behavior: smooth; }
+  @media (max-width: 640px) { html { scroll-padding-top: var(--page); } }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
   body { margin: 0; color: var(--text); font: 15px/1.55 "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
          background: var(--grain), radial-gradient(1200px 700px at 15% -10%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 70%), var(--bg);
          background-attachment: fixed; min-height: 100vh; }
@@ -89,7 +93,7 @@
   .note { padding: var(--m); color: var(--heading); border-top: 1px solid var(--line); font-size: 14px; }
   .note b { color: var(--text); }
   .sample { color: var(--muted); font-size: 12px; text-align: center; margin-top: var(--s); }
-  footer { color: var(--muted); font-size: 13px; text-align: center; padding: 0 var(--m) var(--s); }
+  footer { color: var(--heading); font-size: 13px; text-align: center; padding: 0 var(--m) var(--s); }
   footer a { color: inherit; }
   @media (max-width: 960px) {
     .hero, .split, .split.flip { grid-template-columns: minmax(0, 1fr); }
@@ -127,7 +131,7 @@
   <path d="M395.18,125.05c-5.52,0-10-4.48-10-10V45.02s-.13-6.99-3.57-13.53c-4.07-7.73-11.08-11.49-21.44-11.49s-17.37,3.76-21.44,11.49c-3.44,6.54-3.57,13.52-3.57,13.59v69.97c0,5.52-4.48,10-10,10s-10-4.48-10-10V45.02c0-1.14.15-11.42,5.43-21.98,7.43-14.86,21.49-23.04,39.58-23.04s32.16,8.18,39.58,23.04c5.28,10.56,5.43,20.84,5.43,21.98v70.03c0,5.52-4.48,10-10,10Z" class="logo-1"/>
   <circle cx="185.08" cy="115.05" r="10" class="logo-2"/>
 </svg>
-    <nav><a href="#features">Features</a><a href="#maps">Maps</a><a href="#photons">Photons</a><a href="#honest">Security</a><a href="#set-up">Set up</a><a href="https://neon.directory">Find your atom</a><a href="https://eu1.element10.network/explore">Explorer</a></nav>
+    <nav><a href="#features">Features</a><a href="#maps">Maps</a><a href="#photons">Photons</a><a href="#honest">Security</a><a href="#set-up">Set up</a><a href="https://neon.directory">Find your atom</a><a href="https://element10.network/explore">Explorer</a></nav>
   </header>
 
   <div class="card hero">
@@ -136,7 +140,7 @@
       <p>Neon turns a Helium IoT hotspot into an <b>atom</b>: a Meshtastic super-node for everyone around it that
         keeps serving Helium sensors, links up with the other atoms over the internet, and earns NEON for the
         coverage it proves.</p>
-      <div class="btns"><a class="btn" href="#set-up">Set one up</a><a class="btn secondary" href="https://eu1.element10.network/explore">See the network</a></div>
+      <div class="btns"><a class="btn" href="#set-up">Set one up</a><a class="btn secondary" href="https://element10.network/explore">See the network</a></div>
     </div>
     <figure style="margin:0"><picture><source srcset="img/atom-dark.webp" media="(prefers-color-scheme: dark)"><img class="shot" src="img/atom-light.webp" width="2000" height="1250" alt="An atom's panel: photons today, this week and in total, a chart of photons per day and where they came from"></picture>
       <figcaption class="sample">The atom's panel (sample data)</figcaption></figure>
@@ -209,7 +213,8 @@
       <li><h3>Coverage at the edge</h3><p>A packet only one operator heard earns a quarter photon, when others heard
         the same sender that day. Helium sensor uplinks two operators heard earn 0.1.</p></li>
       <li><h3>Limits per day</h3><p>An atom earns at most 100 photons from one sender, and from each other operator whose atoms heard
-        the same packets 500, then a tenth of the rest up to 1,000. So faking traffic with a friend pays little.</p></li>
+        the same packets 500 (from 30 November also a tenth of the rest, up to 1,000), and from Helium sensor uplinks
+        150 (10 from one device). So faking traffic with a friend pays little.</p></li>
       <li><h3>Weekly NEON</h3><p>Each week's NEON goes 70 % to atoms by their photons, 10 % to the electrodes that carried
         their reports, 20 % to the treasury. At most 1 billion NEON, the weekly amount halving every two years. NEON
         is never sold: it is only earned.</p></li>
@@ -223,7 +228,8 @@
       <li><h3>Signed, timed reports</h3><p>Every reception report is signed by the atom. The radio's microsecond counter must
         agree with its clock, and a report that arrives late does not count.</p></li>
       <li><h3>Positions proven by radio</h3><p>Atoms send short radio beacons that their neighbours check: a position counts once
-        atoms of two other networks hear it as its distance allows. Atoms on one roof count as one witness.</p></li>
+        an atom of another network hears it as its distance allows (from 30 November: atoms of two other networks, and
+        a silent neighbour counts against it). Atoms on one roof count as one witness.</p></li>
       <li><h3>Results on the record</h3><p>Electrodes sign their day logs, and fixed rules turn them into the weekly
         result: the same logs always give the same result, computed twice on separate machines. It goes on Solana and can
         be claimed after a challenge period, each operator with their own wallet.</p></li>

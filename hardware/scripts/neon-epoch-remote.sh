@@ -7,7 +7,9 @@
 #   list      the epochs waiting in epochs/pending/ (one number a line)
 #   get N     pending/epoch-N.json
 #   prev N    epochs/epoch-(N-1).json (the one epoch N was computed from)
-#   done N    pending/epoch-N.json moved into epochs/ (once its root is on chain)
+#   done N [H] pending/epoch-N.json moved into epochs/ (once its root is on chain); with H, only if
+#             the file is still the one posted (H: sha256 of `jq -S -c .` of it; this electrode can
+#             compute the epoch again and replace a pending file between the poster's get and done)
 #   logs N    the signed day logs pending epoch N was computed from (its days and the day after,
 #             this electrode's own, its mirrors' and the signatures seen), as a gzipped tar: the
 #             poster computes the epoch again from them and posts only the same root (decision 5)
@@ -67,6 +69,12 @@ case "$what" in
         ;;
     done)
         [ -e "$EPOCHS/epoch-$n.json" ] && { echo "epoch $n is filed already" >&2; exit 1; }
+        if [ -n "${3:-}" ]; then
+            f="$EPOCHS/pending/epoch-$n.json"
+            [ -f "$f" ] || { echo "epoch $n is not pending" >&2; exit 1; }
+            h=$(jq -S -c . "$f" | sha256sum | cut -c1-64)
+            [ "$h" = "$3" ] || { echo "epoch $n: the pending file changed since it was fetched (computed again): not filed" >&2; exit 1; }
+        fi
         mv "$EPOCHS/pending/epoch-$n.json" "$EPOCHS/epoch-$n.json"
         echo "epoch $n filed"
         ;;

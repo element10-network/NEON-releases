@@ -86,6 +86,8 @@ update() {
     git clone -q --depth 1 --branch "$tag" "https://github.com/$GH_REPO.git" "$TMP/src" || die "could not fetch the scripts of $tag"
     tree=$(cd "$TMP/src" && find hardware -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum | sha256sum | cut -d' ' -f1)
     [ "$tree" = "$tree_want" ] || die "the scripts at $tag are not the ones scripts.txt signs: nothing installed"
+    # Not while a posting run is going: it would use the old neon-oracle with the new neon-token.
+    systemctl is-active -q neon-post.service && die "a posting run is going: update when it is over"
     # Everything checked: install.
     for tool in neon-oracle neon-token; do
         [ -f "$TMP/$tool" ] && install -m 755 "$TMP/$tool" "$BIN/$tool"
@@ -96,13 +98,14 @@ update() {
     install -m 755 "$TMP/src/hardware/keybox/keybox.sh" "$HOME_DIR/keybox.sh"
     systemctl daemon-reload
     echo "$version" > "$HOME_DIR/version"
-    sed -n 's/^token-commit //p' "$TMP/tools.txt" > "$HOME_DIR/token-commit"
+    # The NEON-token commit, only for a neon-token installed now (one kept keeps its own).
+    [ -f "$TMP/neon-token" ] && sed -n 's/^token-commit //p' "$TMP/tools.txt" > "$HOME_DIR/token-commit"
     echo "installed release $version (neon-oracle, neon-token, neon-post.sh, the key box's menu)"
 }
 
 # ---- import: settings and keys from a USB stick, made on the old posting machine ----
-# The stick's folder holds post.conf, admin.json (the admin keypair) and ssh/ (id_ed25519 and
-# known_hosts): see docs/HUB.md "The key box".
+# The stick's folder holds post.conf, admin.json (the admin keypair), ssh/ (id_ed25519 and
+# known_hosts) and epochs/ (the kept epochs): see docs/HUB.md "The key box".
 import() {
     d=${1:?import DIR}
     [ "$(id -u)" = 0 ] || { as_root "$0" import "$d"; return; }
@@ -111,10 +114,18 @@ import() {
     # The paths on this machine; the rest as it was (the electrode, the treasury, the core hubs...).
     grep -v -E '^(NEON_TOKEN|NEON_ORACLE|KEYPAIR|SSH_KEY|LOCAL_EPOCHS)=' "$d/post.conf" > "$TMP/post.conf"
     printf 'NEON_TOKEN=%s\nNEON_ORACLE=%s\nKEYPAIR=%s\nSSH_KEY=%s\n' "$BIN/neon-token" "$BIN/neon-oracle" "$STATE/admin.json" "$STATE/ssh/id_ed25519" >> "$TMP/post.conf"
-    install -m 644 "$TMP/post.conf" "$CONF"
+    # Readable by the poster only (an RPC address can carry an API key).
+    install -m 640 -o root -g "$USER_NAME" "$TMP/post.conf" "$CONF"
     install -m 600 -o "$USER_NAME" -g "$USER_NAME" "$d/admin.json" "$STATE/admin.json"
     install -m 600 -o "$USER_NAME" -g "$USER_NAME" "$d/ssh/id_ed25519" "$STATE/ssh/id_ed25519"
     install -m 644 -o "$USER_NAME" -g "$USER_NAME" "$d/ssh/known_hosts" "$STATE/ssh/known_hosts"
+    # The epochs the old machine posted and kept (what a root does not cover, carried to the next
+    # epoch; without them the first run takes the electrode's word and looks every hotspot up).
+    if [ -d "$d/epochs" ]; then
+        for f in "$d"/epochs/epoch-*.json; do
+            [ -f "$f" ] && install -m 644 "$f" "$STATE/epochs/"
+        done
+    fi
     chown -R "$USER_NAME:$USER_NAME" "$STATE"
     chmod 700 "$STATE" "$STATE/ssh"
     firewall
@@ -123,18 +134,27 @@ import() {
 
 wipe() {
     d=${1:?wipe DIR}
+    # As root: a stick mounted without uid= holds files ne cannot remove.
+    [ "$(id -u)" = 0 ] || { as_root "$0" wipe "$d"; return; }
     for f in admin.json ssh/id_ed25519 ssh/id_ed25519.pub ssh/known_hosts post.conf; do
         [ -f "$d/$f" ] && shred -u "$d/$f"
     done
+    # (The epochs are public: removed, not shredded.)
+    rm -rf "$d/epochs"
     rmdir "$d/ssh" "$d" 2>/dev/null || true
     sync
     echo "erased from $d (on a flash stick shred cannot reach every copy: keep the stick with the key box, or destroy it)"
 }
 
-# ---- firewall: nothing in; out only DNS, time, HTTPS and the electrode's SSH port ----
+# ---- firewall: nothing in; out only DNS, DHCP, time, HTTP(S) and the electrode's SSH port ----
 firewall() {
-    port=$(sed -n 's/^PORT=\([0-9]*\).*/\1/p' "$CONF" 2>/dev/null | tail -n 1)
-    [ -n "$port" ] || port=22
+    # The SSH port as neon-post.sh reads it (quoted or not), and any port an RPC address names.
+    ports=$(conf PORT)
+    case "$ports" in "" | *[!0-9]*) ports=22 ;; esac
+    for u in "$(conf URL)" "$(conf HELIUM_RPC)"; do
+        p=$(echo "$u" | sed -n 's|^[a-z]*://[^/:]*:\([0-9][0-9]*\).*|\1|p')
+        [ -n "$p" ] && ports="$ports, $p"
+    done
     cat > /etc/nftables.conf <<EOF
 #!/usr/sbin/nft -f
 # The key box (keybox.sh): nothing comes in; out only what posting needs.
@@ -146,6 +166,8 @@ table inet keybox {
         ct state established,related accept
         # IPv6 neighbour discovery and router adverts (the network itself), nothing else.
         icmpv6 type { nd-neighbor-solicit, nd-neighbor-advert, nd-router-advert } accept
+        # DHCPv6 answers to a solicit sent to multicast (conntrack does not pair them).
+        udp sport 547 udp dport 546 accept
     }
     chain forward {
         type filter hook forward priority 0; policy drop;
@@ -155,7 +177,8 @@ table inet keybox {
         oif lo accept
         ct state established,related accept
         udp dport { 53, 67, 123, 547 } accept
-        tcp dport { 53, 443, $port } accept
+        # 80: the OS's own updates (apt, its lists signed by Debian and Raspberry Pi).
+        tcp dport { 53, 80, 443, $ports } accept
         icmp type echo-request accept
         icmpv6 type { echo-request, nd-neighbor-solicit, nd-neighbor-advert, nd-router-solicit } accept
     }
@@ -173,7 +196,8 @@ status() {
     # (The DHCP clients' sockets, 68 and 546, are not services; the firewall drops all of it anyway.)
     open=$(ss -Htuln 2>/dev/null | awk '{print $5}' | grep -v -E '^(127\.|\[::1\]|.*%lo:)' | grep -v -E ':(68|546)$' | wc -l)
     echo "Listening    $open port(s) open to the network$( [ "$open" = 0 ] && echo ' (as it should be)')"
-    if nft list ruleset 2>/dev/null | grep -q 'hook input priority 0; policy drop'; then echo "Firewall     incoming dropped"; else echo "Firewall     NOT ON (Set up again)"; fi
+    # (nft prints the priority by name, "filter", and needs root to list.)
+    if as_root nft list chain inet keybox input 2>/dev/null | grep -q 'hook input .* policy drop'; then echo "Firewall     incoming dropped"; else echo "Firewall     NOT ON (Set up again)"; fi
     if [ ! -s "$CONF" ]; then echo "Settings     none yet (Import from a USB stick)"; return 0; fi
     url=$(conf URL); remote=$(conf REMOTE); port=$(conf PORT)
     echo "Network      ${url:-devnet}, electrode ${remote:-?} (port ${port:-22})"
@@ -239,14 +263,15 @@ menu() {
             import|wipe) d=$(whiptail --inputbox "The stick's neon-keybox folder (plug the stick in first)" 9 72 "$(stick)" 3>&1 1>&2 2>&3) || continue
                 clear; "$0" "$c" "$d" > /tmp/keybox-out 2>&1 || true; whiptail --title "$c" --scrolltext --textbox /tmp/keybox-out 16 78 ;;
             timer) if systemctl is-enabled -q neon-post.timer 2>/dev/null; then
-                    whiptail --yesno "Turn the posting timer off? Nothing is posted until it is on again." 9 70 && as_root systemctl disable --now neon-post.timer
+                    whiptail --yesno "Turn the posting timer off? Nothing is posted until it is on again." 9 70 && as_root systemctl disable --now neon-post.timer || true
                 else
-                    whiptail --yesno "Turn the posting timer on (daily 03:15 UTC)? First make sure the old posting machine's timer is off: two posters must never run." 10 72 && as_root systemctl enable --now neon-post.timer
+                    whiptail --yesno "Turn the posting timer on (daily 03:15 UTC)? First make sure the old posting machine's timer is off: two posters must never run." 10 72 && as_root systemctl enable --now neon-post.timer || true
                 fi ;;
-            edit) as_root nano "$CONF" ;;
-            eject) sync; as_root umount /mnt/stick 2>/dev/null; whiptail --msgbox "The stick can be taken out." 7 40 ;;
-            reboot) whiptail --yesno "Restart the key box?" 8 40 && as_root systemctl reboot ;;
-            off) whiptail --yesno "Shut the key box down? Nothing is posted while it is off." 8 64 && as_root systemctl poweroff ;;
+            # A port changed in the settings is opened at once.
+            edit) as_root nano "$CONF" || true; as_root "$0" firewall > /tmp/keybox-out 2>&1 || whiptail --title "Firewall" --scrolltext --textbox /tmp/keybox-out 16 78 ;;
+            eject) sync; as_root umount /mnt/stick 2>/dev/null || true; whiptail --msgbox "The stick can be taken out." 7 40 ;;
+            reboot) whiptail --yesno "Restart the key box?" 8 40 && as_root systemctl reboot || true ;;
+            off) whiptail --yesno "Shut the key box down? Nothing is posted while it is off." 8 64 && as_root systemctl poweroff || true ;;
         esac
     done
 }

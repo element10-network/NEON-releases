@@ -177,14 +177,18 @@ fi
 SETUP_PW=$(raw NEON_SETUP_PASSWORD | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
 # None given (owner 2026-11-10): one is made, 8 digits, and written in neon-status.txt on the card
 # (read it on any computer): never an open setup Wi-Fi nor a panel anyone near can set up first.
+# A first boot run again (an install that failed, a power cut) finds neon.txt's field emptied below
+# and takes the kept one: shown in neon-status.txt only if it was made here, never the owner's own
+# password (review 2026-11-15).
 if [ -z "$SETUP_PW" ]; then
     if [ -s /opt/neon/setup-code ]; then
         SETUP_PW=$(cat /opt/neon/setup-code)
+        [ -e /opt/neon/setup-code.made ] && SETUP_PW_MADE=$SETUP_PW
     else
         n=$(od -An -N4 -tu4 /dev/urandom | tr -d ' ')
         SETUP_PW=$(printf '%08d' $((n % 100000000)))
+        SETUP_PW_MADE=$SETUP_PW
     fi
-    SETUP_PW_MADE=$SETUP_PW
 fi
 if [ -n "$SETUP_PW" ]; then
     case ${#SETUP_PW} in
@@ -199,6 +203,7 @@ if [ -n "$SETUP_PW" ]; then
     fi
     mkdir -p /opt/neon
     (umask 077 && printf '%s\n' "$SETUP_PW" > /opt/neon/setup-code)
+    if [ -n "${SETUP_PW_MADE:-}" ]; then : > /opt/neon/setup-code.made; else rm -f /opt/neon/setup-code.made; fi
     # The installed atom's setup Wi-Fi (neon-hotspot.sh) keeps the same password.
     q=$(printf '%s' "$SETUP_PW" | sed "s/'/'\\\\''/g")
     (umask 077 && printf "HOTSPOT_PASSWORD='%s'\n" "$q" > /opt/neon/hotspot.conf)
