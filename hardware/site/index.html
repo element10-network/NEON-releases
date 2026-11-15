@@ -26,7 +26,11 @@
             --accent: #ff6b49; --on-accent: #16181b; --soft: #46271f; }
   }
   * { box-sizing: border-box; }
-  html { background: var(--bg); }
+  /* A link to a section scrolls it to just under the header that stays on top (owner 2026-11-15: its heading was
+     hidden under the bar); none on a phone, where the header scrolls away. */
+  html { background: var(--bg); scroll-padding-top: calc(56px + 2 * var(--page)); scroll-behavior: smooth; }
+  @media (max-width: 640px) { html { scroll-padding-top: var(--page); } }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
   body { margin: 0; color: var(--text); font: 15px/1.55 "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
          background: var(--grain), radial-gradient(1200px 700px at 15% -10%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 70%), var(--bg);
          background-attachment: fixed; min-height: 100vh; }
