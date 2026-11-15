@@ -34,6 +34,15 @@
 #   CLAWBACK="N:<wallet>:<amount> ..."  over-claims found, recorded with epoch N (smallest units):
 #                              owed back from the wallet's later earnings (owner 2026-11-12). Name
 #                              the same in hq's post.conf, or the post is refused.
+#   EXCUSE="YYYY-MM-DD:<peer> ..."  days a core electrode signed no log for, let through by hand
+#                              (neon-oracle --excuse; only those of the epoch being computed are
+#                              passed). Name the same in the poster's post.conf, or the post is refused.
+#
+# With POST=0 a result waiting in epochs/pending/ is computed again every run: a registry change,
+# a clawback, an excuse or a late log that changes its root replaces it (the poster computes it
+# again too and posts only the same root); an unchanged one stays as it is. A result filed in
+# epochs/ for the epoch the chain asks for again (its root cancelled by the guardian) is moved to
+# epochs/cancelled/, so it is no longer served or in the way.
 set -eu
 export RUST_BACKTRACE=0
 CONF=${NEON_EPOCH_CONF:-/etc/neon/epoch.conf}
@@ -62,9 +71,16 @@ if ! mkdir -p "$EPOCHS/pending" 2>/dev/null || [ ! -w "$EPOCHS" ] || [ ! -w "$EP
     exit 1
 fi
 N=$(tok next-epoch)
-if [ "$POST" != 1 ] && [ -f "$EPOCHS/pending/epoch-$N.json" ]; then
-    echo "epoch $N is computed and waits for its root to be posted: $EPOCHS/pending/epoch-$N.json"
-    exit 0
+case "$N" in ""|*[!0-9]*) echo "the chain's next epoch is not a number: $N"; exit 1 ;; esac
+# Filed, but the chain asks for this epoch again: its root was cancelled (cancelling closes the root
+# account). Moved only on the chain's word that there is no such root, or another one; an RPC that
+# is behind or does not answer leaves it where it is.
+chk=""
+[ -f "$EPOCHS/epoch-$N.json" ] && chk=$(tok check "$EPOCHS/epoch-$N.json" 2>&1 || true)
+if case "$chk" in *"has no root on chain"* | *"is not the one on chain"*) true ;; *) false ;; esac; then
+    mkdir -p "$EPOCHS/cancelled"
+    mv "$EPOCHS/epoch-$N.json" "$EPOCHS/cancelled/epoch-$N-$(date -u +%Y%m%dT%H%M%SZ).json"
+    echo "epoch $N's filed result is not the root on chain (cancelled): moved to $EPOCHS/cancelled/"
 fi
 
 OUT=$WORK/epoch-$N.json
@@ -135,6 +151,20 @@ if [ -n "$cb" ]; then
     printf '{%s}\n' "$cb" > "$WORK/clawback.json"
     set -- "$@" --clawback "$WORK/clawback.json"
 fi
+# Excused days of this epoch only (its week, the day before and the day after: rules v16 read them),
+# each DATE:PEER; a malformed entry is refused, not skipped.
+first=$(date -u -d "$LAUNCH + $((N * 7 - 1)) days" +%F)
+last=$(date -u -d "$LAUNCH + $((N * 7 + 7)) days" +%F)
+for x in ${EXCUSE:-}; do
+    case "$x" in
+        [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]:12D3KooW*) ;;
+        *) echo "EXCUSE in $CONF: $x is not YYYY-MM-DD:<peer ID>"; exit 1 ;;
+    esac
+    case "${x#*:}" in *[!0-9A-Za-z]*) echo "EXCUSE in $CONF: $x: not a peer ID"; exit 1 ;; esac
+    d=${x%%:*}
+    { [ "$d" \< "$first" ] || [ "$d" \> "$last" ]; } && continue
+    set -- "$@" --excuse "$x"
+done
 [ "${FORCE:-0}" = 1 ] && set -- "$@" --force
 
 if ! out=$("$NEON_ORACLE" "$@" "$REPORTS" 2>&1); then
@@ -161,6 +191,14 @@ if [ "$POST" = 1 ]; then
     echo "epoch $N posted and published: $EPOCHS/epoch-$N.json"
 else
     mkdir -p "$EPOCHS/pending"
-    install -m 644 "$OUT" "$EPOCHS/pending/epoch-$N.json"
-    echo "epoch $N computed: post its root with the multisig, then move $EPOCHS/pending/epoch-$N.json to $EPOCHS/"
+    old="$EPOCHS/pending/epoch-$N.json"
+    if [ -f "$old" ] && [ "$(jq -r .root "$old")" = "$(jq -r .root "$OUT")" ]; then
+        echo "epoch $N computed again: the same root, it waits to be posted ($old)"
+    elif [ -f "$old" ]; then
+        install -m 644 "$OUT" "$old"
+        echo "epoch $N computed again with another root (a registry change, a clawback, an excuse or a late log): $old replaced"
+    else
+        install -m 644 "$OUT" "$old"
+        echo "epoch $N computed: post its root with the multisig, then move $old to $EPOCHS/"
+    fi
 fi
