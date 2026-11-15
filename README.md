@@ -27,7 +27,7 @@ curl -fsSL https://raw.githubusercontent.com/element10-network/NEON-releases/mai
 ```
 
 Then open neon.directory (no internet: `http://<hostname>.local`, or `http://<address>:8080`) and finish the setup page
-(it asks for the 8-digit setup code the script prints at the end). Atoms
+(it asks for the setup code the script prints at the end). Atoms
 install new releases from here by themselves, between 03:00 and 05:00 UTC (panel: Settings → Updates).
 A ready SD card image is the release
 [`sd-image`](https://github.com/element10-network/NEON-releases/releases/tag/sd-image); in Raspberry Pi

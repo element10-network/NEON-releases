@@ -1,7 +1,7 @@
 #!/bin/sh
 # Weekly token epoch on a hub (neon-epoch.timer runs it daily; nothing happens until the
 # next epoch's week is over). For the epoch whose root comes next on chain it:
-#   1. lists the registered hubs from the chain (neon-token hubs),
+#   1. lists the registered hubs and their history from the chain (neon-token hubs --history),
 #   2. computes the epoch from the signed day logs (neon-oracle, continuing from the
 #      previous epoch's result in epochs/),
 #   3. checks every proof (neon-oracle --check),
@@ -101,13 +101,21 @@ fi
 # accounts: epoch 0 was computed without the registered electrode, 2026-10-27), so it is asked
 # again, and an empty one stops the run instead of computing an epoch in which no hub earns (a
 # posted epoch cannot be changed); the timer tries again the next day. NO_HUBS_OK=1 believes it.
-has_hubs() { [ -n "$(tr -d ' \n{}' < "$WORK/hubs.json")" ]; }
+has_hubs() { jq -e '(if has("changes") then .hubs else . end) | length > 0' "$WORK/hubs.json" >/dev/null 2>&1; }
 for try in 1 2 3; do
-    # A failed call (the RPC down) is an empty answer: tried again.
-    tok hubs > "$WORK/hubs.json" || : > "$WORK/hubs.json"
+    # A failed call (the RPC down) is an empty answer: tried again. With its history (owner
+    # 2026-11-15: from 2026-11-30 each day takes the registry as it was that day), and the hubs
+    # the previous epoch had (one removed since is in the history too).
+    tok hubs --history ${PREV:+"$PREV"} > "$WORK/hubs.json" || : > "$WORK/hubs.json"
     has_hubs && break
     [ "$try" -lt 3 ] && sleep 20
 done
+# A neon-token from before the registry's history prints none: the epoch would quietly differ from
+# the poster's (both must take each day's registry).
+if has_hubs && ! jq -e 'has("changes")' "$WORK/hubs.json" >/dev/null; then
+    echo "neon-token printed no registry history (older than NEON-token 1f07919: update it): epoch $N not computed"
+    exit 1
+fi
 if has_hubs; then
     set -- "$@" --hubs "$WORK/hubs.json"
 elif [ "${NO_HUBS_OK:-0}" = 1 ]; then

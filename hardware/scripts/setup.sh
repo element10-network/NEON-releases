@@ -122,7 +122,7 @@ asset() {
 vle() { [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n 1)" = "$1" ]; }
 # An older release is never installed from here: making an old release the newest cannot bring back
 # its unchecked scripts or fixed bugs. Raised with each stable release (the one before it).
-MIN_RELEASE=0.8.23
+MIN_RELEASE=0.8.24
 # The scripts run as root: unless a branch or tag is given (or the private source is used), they
 # come from the newest release's tag and must match the tree hash its signed scripts.txt names.
 # Every failure stops the install (a download that fails is not "an older release").
@@ -365,8 +365,12 @@ sh "$REPO/hardware/scripts/network.sh" || echo "local name / hotspot not set up 
 # (NEON_SETUP_PASSWORD in neon.txt) or none (NEON_FIRSTBOOT=1). Asked only before the setup; a
 # reset removes it (the next owner gets a new one from the next install).
 if [ ! -f "$PREFIX/neond.toml" ] && [ ! -s "$PREFIX/setup-code" ] && [ "${NEON_FIRSTBOOT:-0}" != 1 ]; then
-    n=$(od -An -N4 -tu4 /dev/urandom | tr -d ' ')
-    (umask 077 && printf '%08d\n' $((n % 100000000)) > "$PREFIX/setup-code")
+    # 12 letters and digits in groups of four (owner 2026-11-15: 8 digits were found offline from
+    # one Wi-Fi handshake), none that look alike.
+    code=$(tr -dc 23456789ABCDEFGHJKLMNPQRSTUVWXYZ < /dev/urandom 2>/dev/null | head -c 12 | sed 's/\(....\)\(....\)\(....\)/\1-\2-\3/')
+    # Never an empty one (it would leave the setup Wi-Fi and the panel open).
+    [ "${#code}" = 14 ] || die "could not make a setup code"
+    (umask 077 && printf '%s\n' "$code" > "$PREFIX/setup-code")
 fi
 [ -f "$PREFIX/setup-code" ] && chmod 600 "$PREFIX/setup-code"
 # The setup Wi-Fi's password is the code (owner 2026-11-10: never an open one before the setup).
