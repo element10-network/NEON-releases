@@ -14,8 +14,8 @@
 # Empty: the atom makes one (8 digits) and writes it in neon-status.txt on this card at its first
 # start (read it on any computer). Writing your Wi-Fi in Raspberry Pi Imager (or below) also
 # avoids the setup Wi-Fi.
-# Letters, digits, spaces and the usual signs only. It stays in this file (and is the atom's
-# setup Wi-Fi password later too): keep the card to yourself.
+# Letters, digits, spaces and the usual signs only. At its first start the atom keeps it (the setup
+# Wi-Fi's password later too) and empties this line, so it is not left readable on the card.
 NEON_SETUP_PASSWORD=
 
 # EU868 (default) or US915: the hotspot's band, fixed at install.

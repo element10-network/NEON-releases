@@ -27,8 +27,9 @@ your network, **Connect**.
 
 1. On a computer or phone on the same network, open **neon.directory**: it lists the atoms on your
    network. A new atom shows "Getting its certificate" for a few minutes, then **Open**.
-2. If the page first asks for a **setup code**: it is the setup password written in `neon.txt` on the SD
-   card (the same password opens the **Neon Setup** Wi-Fi), or the 8 digits the install script printed.
+2. If the page first asks for a **setup code**: it is the setup password you wrote in `neon.txt` on the SD
+   card, or, if you wrote none, the 8 digits in `neon-status.txt` on the card (open it on any computer); the
+   same code opens the **Neon Setup** Wi-Fi. An install with the script printed its 8 digits at the end.
    Ask whoever gave you the atom if you do not have it.
 3. The setup page is one page: **Network connection** (Cable or Wi-Fi), **your name** (the atom names
    itself), the **Meshtastic preset**, a **panel password**, then **Payout wallet** and **Position**. The preset must be the one the

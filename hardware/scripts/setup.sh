@@ -28,6 +28,10 @@
 #   NEON_SOURCE=1 build neond from the private source instead of downloading the release
 #   NEON_TOKEN    with NEON_SOURCE=1: GitHub token for the source (fine-grained, Contents: read-only)
 set -eu
+# All of it in one function run on the last line: a download cut short (curl | sh) runs nothing,
+# not half the script (review 2026-11-15: one cut inside a here-document left neond.env without
+# its arguments for good).
+main() {
 # Under systemd (the SD image's first boot) HOME is not set; rustup and cargo need it.
 export HOME="${HOME:-/root}"
 
@@ -118,7 +122,7 @@ asset() {
 vle() { [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n 1)" = "$1" ]; }
 # An older release is never installed from here: making an old release the newest cannot bring back
 # its unchecked scripts or fixed bugs. Raised with each stable release (the one before it).
-MIN_RELEASE=0.8.22
+MIN_RELEASE=0.8.23
 # The scripts run as root: unless a branch or tag is given (or the private source is used), they
 # come from the newest release's tag and must match the tree hash its signed scripts.txt names.
 # Every failure stops the install (a download that fails is not "an older release").
@@ -407,3 +411,5 @@ The setup page asks for this setup code (it proves the atom is yours):
 }
 Logs: journalctl -u neond -f      (forwarder: journalctl -u neon-forwarder -f)
 EOF
+}
+main "$@"

@@ -192,13 +192,16 @@ if [ "$POST" = 1 ]; then
 else
     mkdir -p "$EPOCHS/pending"
     old="$EPOCHS/pending/epoch-$N.json"
-    if [ -f "$old" ] && [ "$(jq -r .root "$old")" = "$(jq -r .root "$OUT")" ]; then
-        echo "epoch $N computed again: the same root, it waits to be posted ($old)"
+    # The whole result, not only the root: the poster compares all of it (what the root does not
+    # cover, such as the hubs and the inputs, is carried to the next epoch). Replaced by a rename,
+    # never written in place (the poster may be fetching it).
+    if [ -f "$old" ] && [ "$(jq -S -c . "$old")" = "$(jq -S -c . "$OUT")" ]; then
+        echo "epoch $N computed again: the same result, it waits to be posted ($old)"
     elif [ -f "$old" ]; then
-        install -m 644 "$OUT" "$old"
-        echo "epoch $N computed again with another root (a registry change, a clawback, an excuse or a late log): $old replaced"
+        install -m 644 "$OUT" "$old.new" && mv -f "$old.new" "$old"
+        echo "epoch $N computed again with another result (a registry change, a clawback, an excuse or a late log): $old replaced"
     else
-        install -m 644 "$OUT" "$old"
+        install -m 644 "$OUT" "$old.new" && mv -f "$old.new" "$old"
         echo "epoch $N computed: post its root with the multisig, then move $old to $EPOCHS/"
     fi
 fi
