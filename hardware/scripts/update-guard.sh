@@ -25,11 +25,15 @@ RUNMARK=/run/neon-update-started
 [ -d /run/neon-guard ] && RUNMARK=/run/neon-guard/started
 [ -f "$STATE/update.json" ] || exit 0
 boot=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null || true)
+# The boot known from /run as well (review 2026-11-16: on a full card update.boot cannot be
+# written, every start looked like a new boot, and a crashing release was never rolled back).
+BOOTMARK=$RUNMARK.boot
 if [ -f "$STATE/update.alive" ] ||
-    { [ -n "$boot" ] && [ "$(cat "$STATE/update.boot" 2>/dev/null)" != "$boot" ]; }; then
+    { [ -n "$boot" ] && [ "$(cat "$STATE/update.boot" 2>/dev/null)" != "$boot" ] &&
+        [ "$(cat "$BOOTMARK" 2>/dev/null)" != "$boot" ]; }; then
     rm -f "$STATE/update.alive" "$STATE/update.attempts" "$RUNMARK"
 fi
-[ -n "$boot" ] && echo "$boot" > "$STATE/update.boot"
+[ -n "$boot" ] && { echo "$boot" > "$STATE/update.boot"; echo "$boot" > "$BOOTMARK"; } 2>/dev/null
 n=$(cat "$STATE/update.attempts" 2>/dev/null || echo 0)
 # Anything but a number (a file cut short by a power cut) counts as none: a bad number here would
 # stop the script, and with it neond's start.
@@ -39,8 +43,10 @@ n=$((n + 1))
 # one, or a crashing release would start again every few seconds for good.
 # Its first such start is told apart in /run (memory, always writable, empty at each boot): a full
 # card alone must not roll a healthy release back at once (review 2026-11-15).
-if ! echo "$n" > "$STATE/update.attempts" 2>/dev/null || [ "$(cat "$STATE/update.attempts" 2>/dev/null)" != "$n" ]; then
-    if [ -e "$RUNMARK" ]; then n=2; else : > "$RUNMARK" 2>/dev/null; n=1; fi
+if ! { echo "$n" > "$STATE/update.attempts"; } 2>/dev/null || [ "$(cat "$STATE/update.attempts" 2>/dev/null)" != "$n" ]; then
+    # The mark names this update (one left by an earlier update this boot is not its start).
+    this=$(cksum < "$STATE/update.json" 2>/dev/null || echo none)
+    if [ "$(cat "$RUNMARK" 2>/dev/null)" = "$this" ]; then n=2; else echo "$this" > "$RUNMARK" 2>/dev/null; n=1; fi
 fi
 # The first start after the update (or after a deliberate stop or a reboot) is n = 1; any
 # other start before neond confirmed the update follows a crash or an exit.

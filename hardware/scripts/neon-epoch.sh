@@ -102,11 +102,17 @@ fi
 # again, and an empty one stops the run instead of computing an epoch in which no hub earns (a
 # posted epoch cannot be changed); the timer tries again the next day. NO_HUBS_OK=1 believes it.
 has_hubs() { jq -e '(if has("changes") then .hubs else . end) | length > 0' "$WORK/hubs.json" >/dev/null 2>&1; }
+# The admin's requests read from the epoch's start less 31 days (the longest a change waits, and a
+# day): the same days on every machine whenever it runs (review 2026-11-16). A neon-token older
+# than NEON-token 8416732 has no --since (it reads its own last 60 days).
+SINCE=$(date -u -d "$LAUNCH + $((N * 7 - 31)) days" +%F)
+since() { if "$NEON_TOKEN" --help 2>/dev/null | grep -q -- '--since'; then echo "--since $SINCE"; fi; }
 for try in 1 2 3; do
     # A failed call (the RPC down) is an empty answer: tried again. With its history (owner
     # 2026-11-15: from 2026-11-30 each day takes the registry as it was that day), and the hubs
     # the previous epoch had (one removed since is in the history too).
-    tok hubs --history ${PREV:+"$PREV"} > "$WORK/hubs.json" || : > "$WORK/hubs.json"
+    # shellcheck disable=SC2046
+    tok hubs --history $(since) ${PREV:+"$PREV"} > "$WORK/hubs.json" || : > "$WORK/hubs.json"
     has_hubs && break
     [ "$try" -lt 3 ] && sleep 20
 done
@@ -121,7 +127,7 @@ if has_hubs; then
 elif [ "${NO_HUBS_OK:-0}" = 1 ]; then
     echo "no registered hubs on chain: every signed log counts, hubs earn nothing (NO_HUBS_OK=1)"
 else
-    echo "the hub registry came back empty three times: epoch $N not computed (an RPC fault? NO_HUBS_OK=1 in $CONF if there really are none). The timer tries again; or check: $NEON_TOKEN --url $URL hubs"
+    echo "the hub registry or its history could not be read three times: epoch $N not computed (an RPC fault, or a history neon-token refused: see its messages above; NO_HUBS_OK=1 in $CONF if there really are no hubs). The timer tries again; or check: $NEON_TOKEN --url $URL hubs --history"
     exit 1
 fi
 [ "${IGNORE_OPERATORS:-0}" = 1 ] && set -- "$@" --ignore-operators
