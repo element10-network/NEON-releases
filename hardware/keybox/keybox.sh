@@ -122,7 +122,8 @@ import() {
     # The epochs the old machine posted and kept (what a root does not cover, carried to the next
     # epoch; without them the first run takes the electrode's word and looks every hotspot up).
     if [ -d "$d/epochs" ]; then
-        for f in "$d"/epochs/epoch-*.json; do
+        # With the marks of those that were the electrode's word (review 2026-11-16).
+        for f in "$d"/epochs/epoch-*.json "$d"/epochs/epoch-*.json.from-electrode; do
             [ -f "$f" ] && install -m 644 "$f" "$STATE/epochs/"
         done
     fi

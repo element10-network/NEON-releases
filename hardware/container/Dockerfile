@@ -12,7 +12,7 @@ FROM debian:bookworm-slim AS fetch
 ARG NEON_VERSION=latest
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl openssl \
     && rm -rf /var/lib/apt/lists/*
-COPY hardware/release-keys.txt hardware/container/fetch-release.sh /tmp/
+COPY hardware/release-keys.txt hardware/container/fetch-release.sh hardware/scripts/setup.sh /tmp/
 RUN sh /tmp/fetch-release.sh /tmp/release-keys.txt /usr/local/bin/neond "$NEON_VERSION"
 
 FROM debian:bookworm-slim

@@ -38,6 +38,13 @@ if [ "$VERSION" != latest ]; then
     got=$(sed -n 's/^version //p' "$tmp/release.txt")
     [ "$got" = "${VERSION#v}" ] || { echo "release.txt is version $got, not ${VERSION#v}"; exit 1; }
 fi
+# Never older than setup.sh's floor (review 2026-11-16: an old signed release marked "latest" would
+# otherwise be built into the image), read from the setup.sh beside this script when it is there.
+min=$(sed -n 's/^ *MIN_RELEASE=\([0-9.]*\).*/\1/p' "$(dirname "$0")/setup.sh" 2>/dev/null | head -n 1)
+got=$(sed -n 's/^version //p' "$tmp/release.txt")
+if [ -n "$min" ] && [ "$(printf '%s\n%s\n' "$min" "${got%%+*}" | sort -V | head -n 1)" != "$min" ]; then
+    echo "release $got is older than $min (setup.sh's MIN_RELEASE): not used"; exit 1
+fi
 line=$(grep "^file $TARGET " "$tmp/release.txt") || { echo "no release binary for $TARGET"; exit 1; }
 name=$(echo "$line" | cut -d' ' -f3)
 size=$(echo "$line" | cut -d' ' -f4)
