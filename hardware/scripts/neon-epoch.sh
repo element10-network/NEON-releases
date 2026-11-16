@@ -102,10 +102,10 @@ fi
 # again, and an empty one stops the run instead of computing an epoch in which no hub earns (a
 # posted epoch cannot be changed); the timer tries again the next day. NO_HUBS_OK=1 believes it.
 has_hubs() { jq -e '(if has("changes") then .hubs else . end) | length > 0' "$WORK/hubs.json" >/dev/null 2>&1; }
-# The admin's requests read from the epoch's start less 31 days (the longest a change waits, and a
-# day): the same days on every machine whenever it runs (review 2026-11-16). A neon-token older
+# The admin's requests read from the epoch's start less 38 days (the longest a request waits, its
+# delay and the window to apply it, and a day): the same days on every machine whenever it runs (review 2026-11-16). A neon-token older
 # than NEON-token 8416732 has no --since (it reads its own last 60 days).
-SINCE=$(date -u -d "$LAUNCH + $((N * 7 - 31)) days" +%F)
+SINCE=$(date -u -d "$LAUNCH + $((N * 7 - 38)) days" +%F)
 since() { if "$NEON_TOKEN" --help 2>/dev/null | grep -q -- '--since'; then echo "--since $SINCE"; fi; }
 for try in 1 2 3; do
     # A failed call (the RPC down) is an empty answer: tried again. With its history (owner

@@ -131,10 +131,10 @@ for n in $waiting; do
         audit_all=1
         echo "epoch $n: epoch $((n - 1)) was not computed here: its onboarded hotspots are all looked up on Helium" >&2
     fi
-    mv "$KEEP/epoch-$((n - 1)).json.part" "$KEEP/epoch-$((n - 1)).json"
     # Still the electrode's word at the next run if this one stops before posting (review
-    # 2026-11-16: kept without the mark, it was trusted then).
-    [ "$audit_all" = 1 ] && : > "$KEEP/epoch-$((n - 1)).json.from-electrode"
+    # 2026-11-16: kept without the mark, it was trusted then); marked before it is kept.
+    if [ "$audit_all" = 1 ]; then : > "$KEEP/epoch-$((n - 1)).json.from-electrode"; fi
+    mv "$KEEP/epoch-$((n - 1)).json.part" "$KEEP/epoch-$((n - 1)).json"
     # The previous result must be the one on chain (checked against its posted root).
     tok check "$KEEP/epoch-$((n - 1)).json" || { echo "epoch $((n - 1)) does not match the root on chain: epoch $n not posted" >&2; exit 1; }
     # Computed again here from the signed logs, with the registry from the chain, the previous
@@ -147,9 +147,9 @@ for n in $waiting; do
     # electrode's run gives another root, and the epoch waits (compute it again on the electrode).
     prev="$KEEP/epoch-$((n - 1)).json"
     # With its history, as the electrode's run takes it (each day's registry from 2026-11-30).
-    # The admin's requests from the epoch's start less 31 days, as the electrode reads them (review
+    # The admin's requests from the epoch's start less 38 days, as the electrode reads them (review
     # 2026-11-16: the same days whenever each runs). A neon-token without --since: its last 60 days.
-    since=$(date -u -d "$(jq -r .start "$theirs_file") - 31 days" +%F)
+    since=$(date -u -d "$(jq -r .start "$theirs_file") - 38 days" +%F)
     if "$NEON_TOKEN" --help 2>/dev/null | grep -q -- '--since'; then
         tok hubs --history --since "$since" "$prev" > "$work/hubs.json"
     else
