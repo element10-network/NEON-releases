@@ -104,7 +104,8 @@ fi
 has_hubs() { jq -e '(if has("changes") then .hubs else . end) | length > 0' "$WORK/hubs.json" >/dev/null 2>&1; }
 # The admin's requests read from the epoch's start less 38 days (the longest a request waits, its
 # delay and the window to apply it, and a day): the same days on every machine whenever it runs (review 2026-11-16). A neon-token older
-# than NEON-token 8416732 has no --since (it reads its own last 60 days).
+# than NEON-token 8416732 has no --since (it reads its own last 60 days); the current one finds the
+# hubs through the marker address (its transactions from that day).
 SINCE=$(date -u -d "$LAUNCH + $((N * 7 - 38)) days" +%F)
 since() { if "$NEON_TOKEN" --help 2>/dev/null | grep -q -- '--since'; then echo "--since $SINCE"; fi; }
 for try in 1 2 3; do

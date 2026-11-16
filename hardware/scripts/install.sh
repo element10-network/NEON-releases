@@ -253,6 +253,8 @@ EOF
 sed "s|/opt/neon/|$PREFIX/|g" "$HW/systemd/neond.service" > /etc/systemd/system/neond.service
 chmod 644 /etc/systemd/system/neond.service
 install -m 755 "$HW/scripts/update-guard.sh" "$PREFIX/update-guard.sh"
+# The device its radio answered on, for setup.sh run again without NEON_DEVICE.
+printf '%s\n' "$DEVICE" > "$PREFIX/device"
 if [ ! -f "$PREFIX/neond.env" ]; then
     cp "$HW/systemd/neond.env.$REGION" "$PREFIX/neond.env"
 fi
