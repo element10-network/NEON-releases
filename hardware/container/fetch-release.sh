@@ -2,7 +2,7 @@
 # Download a signed neond release for this container's architecture and check it, as setup.sh
 # does: release.sig against the keys in hardware/release-keys.txt, then the binary's size and
 # SHA-256 against release.txt. Used by the Dockerfile (build time only).
-#   fetch-release.sh KEYS_FILE OUT_BINARY [VERSION]   (VERSION: e.g. 0.4.136; default the latest)
+#   fetch-release.sh KEYS_FILE OUT_BINARY [VERSION]   (VERSION: e.g. 0.8.27; never older than setup.sh's MIN_RELEASE; default the latest)
 set -eu
 KEYS=$1
 OUT=$2
@@ -40,7 +40,12 @@ if [ "$VERSION" != latest ]; then
 fi
 # Never older than setup.sh's floor (review 2026-11-16: an old signed release marked "latest" would
 # otherwise be built into the image), read from the setup.sh beside this script when it is there.
-min=$(sed -n 's/^ *MIN_RELEASE=\([0-9.]*\).*/\1/p' "$(dirname "$0")/setup.sh" 2>/dev/null | head -n 1)
+min=""
+if [ -f "$(dirname "$0")/setup.sh" ]; then
+    min=$(sed -n 's/^ *MIN_RELEASE=["'"'"']*\([0-9][0-9.]*\).*/\1/p' "$(dirname "$0")/setup.sh" | head -n 1)
+    # Beside it but unreadable: refused, not skipped without a word.
+    [ -n "$min" ] || { echo "setup.sh has no MIN_RELEASE this script can read: not built"; exit 1; }
+fi
 got=$(sed -n 's/^version //p' "$tmp/release.txt")
 if [ -n "$min" ] && [ "$(printf '%s\n%s\n' "$min" "${got%%+*}" | sort -V | head -n 1)" != "$min" ]; then
     echo "release $got is older than $min (setup.sh's MIN_RELEASE): not used"; exit 1
