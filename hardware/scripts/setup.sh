@@ -47,7 +47,10 @@ case "$(printf '%s' "$ENV_ARGS" | sed -n 's/.*--region \([A-Za-z0-9_]*\).*/\1/p'
     EU_868) OLD_REGION=EU868 ;;
     *) OLD_REGION="" ;;
 esac
-DEVICE=${NEON_DEVICE:-rak-v2}
+# The device the last install found its radio on (review 2026-11-16: run again without NEON_DEVICE,
+# a Nebra was set up as a RAK and its forwarder stopped for good).
+OLD_DEVICE=$(tr -cd 'a-z0-9-' < "$PREFIX/device" 2>/dev/null || true)
+DEVICE=${NEON_DEVICE:-${OLD_DEVICE:-rak-v2}}
 REGION=${NEON_REGION:-${OLD_REGION:-EU868}}
 PRESET=${NEON_PRESET:-${OLD_PRESET:-LongFast}}
 REF=${NEON_REF:-}
@@ -122,7 +125,7 @@ asset() {
 vle() { [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n 1)" = "$1" ]; }
 # An older release is never installed from here: making an old release the newest cannot bring back
 # its unchecked scripts or fixed bugs. Raised with each stable release (the one before it).
-MIN_RELEASE=0.8.29
+MIN_RELEASE=0.8.30
 # The scripts run as root: unless a branch or tag is given (or the private source is used), they
 # come from the newest release's tag and must match the tree hash its signed scripts.txt names.
 # Every failure stops the install (a download that fails is not "an older release").

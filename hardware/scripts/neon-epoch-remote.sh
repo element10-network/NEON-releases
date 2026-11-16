@@ -69,13 +69,21 @@ case "$what" in
         ;;
     done)
         [ -e "$EPOCHS/epoch-$n.json" ] && { echo "epoch $n is filed already" >&2; exit 1; }
+        # Taken aside first, then checked (review 2026-11-16: an epoch computed again between the
+        # check and the move would have been filed unposted); a mismatch goes back.
+        f="$EPOCHS/pending/epoch-$n.json"
+        [ -f "$f" ] || { echo "epoch $n is not pending" >&2; exit 1; }
+        mv "$f" "$f.filing"
         if [ -n "${3:-}" ]; then
-            f="$EPOCHS/pending/epoch-$n.json"
-            [ -f "$f" ] || { echo "epoch $n is not pending" >&2; exit 1; }
-            h=$(jq -S -c . "$f" | sha256sum | cut -c1-64)
-            [ "$h" = "$3" ] || { echo "epoch $n: the pending file changed since it was fetched (computed again): not filed" >&2; exit 1; }
+            h=$(jq -S -c . "$f.filing" | sha256sum | cut -c1-64)
+            if [ "$h" != "$3" ]; then
+                [ -e "$f" ] || mv "$f.filing" "$f"
+                rm -f "$f.filing"
+                echo "epoch $n: the pending file changed since it was fetched (computed again): not filed" >&2
+                exit 1
+            fi
         fi
-        mv "$EPOCHS/pending/epoch-$n.json" "$EPOCHS/epoch-$n.json"
+        mv "$f.filing" "$EPOCHS/epoch-$n.json"
         echo "epoch $n filed"
         ;;
     *) echo "list, get N, prev N, logs N or done N" >&2; exit 2 ;;

@@ -2,7 +2,7 @@
 # Download a signed neond release for this container's architecture and check it, as setup.sh
 # does: release.sig against the keys in hardware/release-keys.txt, then the binary's size and
 # SHA-256 against release.txt. Used by the Dockerfile (build time only).
-#   fetch-release.sh KEYS_FILE OUT_BINARY [VERSION]   (VERSION: e.g. 0.8.27; never older than setup.sh's MIN_RELEASE; default the latest)
+#   fetch-release.sh KEYS_FILE OUT_BINARY [VERSION]   (VERSION: e.g. 0.9.6; never older than setup.sh's MIN_RELEASE; default the latest)
 set -eu
 KEYS=$1
 OUT=$2

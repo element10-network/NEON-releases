@@ -4,7 +4,7 @@
 #
 # Build from the repository's root (the context needs only the release keys, the fetch script and setup.sh):
 #   docker build -f hardware/container/Dockerfile -t neond .
-#   docker build -f hardware/container/Dockerfile --build-arg NEON_VERSION=0.8.27 -t neond:0.8.27 .
+#   docker build -f hardware/container/Dockerfile --build-arg NEON_VERSION=0.9.6 -t neond:0.9.6 .
 # The binary is the signed release for this machine's architecture (arm64 or x86_64), checked against
 # hardware/release-keys.txt at build time: nothing is compiled here.
 

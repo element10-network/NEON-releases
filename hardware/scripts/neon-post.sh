@@ -58,6 +58,9 @@ remote() {
         -o UserKnownHostsFile=/var/lib/neon-post/ssh/known_hosts "$REMOTE" "$@"
 }
 tok() { "$NEON_TOKEN" --url "$URL" --keypair "$KEYPAIR" "$@"; }
+# The same JSON whatever the key order or spacing (review 2026-11-16: compared byte for byte, a
+# difference in writing alone would stop every following epoch).
+same_json() { [ "$(jq -S -c . "$1" 2>/dev/null)" = "$(jq -S -c . "$2" 2>/dev/null)" ] && [ -n "$(jq -c . "$1" 2>/dev/null)" ]; }
 # An electrode on this machine (hq) serves the newest epoch it has to claim pages: given the one
 # just posted, it no longer answers with the week before (owner 2026-11-04, hq showed epoch 0).
 # Also for an epoch found on chain already (a run that posted, then failed before filing it).
@@ -90,7 +93,7 @@ for n in $waiting; do
         # carries what the root does not cover (wallets named, amounts held, onboarded hotspots,
         # core hubs, the hardware rule) and becomes the next epoch's previous (review 2026-11-13).
         if [ -s "$KEEP/epoch-$n.json" ]; then
-            if ! cmp -s "$KEEP/epoch-$n.json" "$KEEP/epoch-$n.json.part"; then
+            if ! same_json "$KEEP/epoch-$n.json" "$KEEP/epoch-$n.json.part"; then
                 rm -f "$KEEP/epoch-$n.json.part"
                 echo "epoch $n: the electrode's file differs from the one posted from here ($KEEP/epoch-$n.json): not filed (copy this machine's file to the electrode's epochs/ by hand)" >&2
                 exit 1
@@ -99,8 +102,9 @@ for n in $waiting; do
         else
             # Posted by hand elsewhere: the electrode's word on what the root does not cover.
             echo "epoch $n: none kept here, the electrode's file taken (its onboarded hotspots are all looked up on Helium with the next epoch)" >&2
-            mv "$KEEP/epoch-$n.json.part" "$KEEP/epoch-$n.json"
+            # Marked before it is kept (review 2026-11-16: a stop between the two kept it unmarked).
             : > "$KEEP/epoch-$n.json.from-electrode"
+            mv "$KEEP/epoch-$n.json.part" "$KEEP/epoch-$n.json"
         fi
         remote done "$n" "$(jq -S -c . "$KEEP/epoch-$n.json" | sha256sum | cut -c1-64)"
         file_local "$n"
@@ -120,7 +124,7 @@ for n in $waiting; do
     # The previous result as this machine kept it when it posted it (it carries state the root
     # does not cover: wallets named before, amounts held, onboarded hotspots, earlier roots): the
     # electrode's copy must be the same file.
-    if [ -s "$KEEP/epoch-$((n - 1)).json" ] && ! cmp -s "$KEEP/epoch-$((n - 1)).json" "$KEEP/epoch-$((n - 1)).json.part"; then
+    if [ -s "$KEEP/epoch-$((n - 1)).json" ] && ! same_json "$KEEP/epoch-$((n - 1)).json" "$KEEP/epoch-$((n - 1)).json.part"; then
         echo "epoch $((n - 1)) on the electrode differs from the one posted from here: epoch $n not posted" >&2
         exit 1
     fi
@@ -148,7 +152,7 @@ for n in $waiting; do
     prev="$KEEP/epoch-$((n - 1)).json"
     # With its history, as the electrode's run takes it (each day's registry from 2026-11-30).
     # The admin's requests from the epoch's start less 38 days, as the electrode reads them (review
-    # 2026-11-16: the same days whenever each runs). A neon-token without --since: its last 60 days.
+    # 2026-11-16: the same days whenever each runs). A neon-token without --since: its own window.
     since=$(date -u -d "$(jq -r .start "$theirs_file") - 38 days" +%F)
     if "$NEON_TOKEN" --help 2>/dev/null | grep -q -- '--since'; then
         tok hubs --history --since "$since" "$prev" > "$work/hubs.json"

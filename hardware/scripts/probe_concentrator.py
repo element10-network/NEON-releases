@@ -126,7 +126,9 @@ def gpio_base():
         if label.startswith("pinctrl-bcm"):
             with open(f"{chip}/base") as f:
                 return int(f.read())
-    sys.exit("no pinctrl-bcm GPIO controller found (is this a Raspberry Pi?)")
+    # Not a Raspberry Pi (a Nebra's RK3399, review 2026-11-16): the chip version is still read;
+    # the GPIO search below is the Pi's.
+    return None
 
 
 def sysfs_write(path, value):
@@ -181,6 +183,16 @@ def main():
 
     print("Step 1: chip version on each SPI device")
     found = find_chip(devices)
+
+    if base is None:
+        print("\nNot a Raspberry Pi: the reset GPIO is the device profile's (hardware/devices/*.env), not searched here.")
+        if found is None:
+            print("No concentrator answered on any SPI device: reset it first (as root, in /opt/neon/sx1302:")
+            print("./reset_lgw.sh start) and run this again; check the SPI overlay and the bus in the device notes.")
+            return 1
+        path, chip = found
+        print(f"\nFound {chip.name} on {path} (version register {chip.version()}).")
+        return 0
 
     if found is None:
         print("\nStep 2: nothing answered. Trying each GPIO as a reset line (pulse) and as a power enable (hold high)...")
