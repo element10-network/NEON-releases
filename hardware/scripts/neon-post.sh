@@ -166,7 +166,8 @@ for n in $waiting; do
     # hotspots): the core hubs are the previous posted epoch's, or the new list named in post.conf.
     theirs_core=$(jq -r '.core_hubs // [] | sort | join(" ")' "$theirs_file")
     prev_core=$(jq -r '.core_hubs // [] | sort | join(" ")' "$prev")
-    conf_core=$(printf '%s\n' $CORE_HUBS | sort | tr '\n' ' ' | sed 's/ $//')
+    # In code-point order, as jq sorts (a locale's order puts 12D3KooWa... before 12D3KooWB...).
+    conf_core=$(printf '%s\n' $CORE_HUBS | LC_ALL=C sort | tr '\n' ' ' | sed 's/ $//')
     # A previous epoch taken from the electrode (none computed here) is the electrode's word on
     # what it carries: it must name core hubs (or CORE_HUBS in post.conf names them), and the
     # hardware rule (in force since before epoch 0), or a compromised electrode could drop both.
@@ -238,16 +239,23 @@ for n in $waiting; do
     theirs_cb=$(jq -r '(.clawback // {}) | to_entries | map("'"$n"':\(.key):\(.value|tostring)") | sort | join(" ")' "$theirs_file")
     # Exactly the ones named here for this epoch, both ways (one left out by the electrode would
     # be lost for good: it is recorded with its epoch only). Each N:<wallet>:<amount>.
-    mine_cb=""
+    # Checked as the electrode checks them (neon-epoch.sh): numbers, one per wallet and epoch.
+    mine_cb="" wallets=" "
     for x in $CLAWBACK; do
         case "$x" in
             *[!0-9A-Za-z:]* | *:*:*:* | :* | *: | *::*) echo "CLAWBACK in $CONF: $x is not N:<wallet>:<amount>" >&2; exit 1 ;;
             [0-9]*:*:[1-9]*) ;;
             *) echo "CLAWBACK in $CONF: $x is not N:<wallet>:<amount> (the amount above 0)" >&2; exit 1 ;;
         esac
-        case "$x" in "$n":*) mine_cb="$mine_cb $x" ;; esac
+        e=${x%%:*} rest=${x#*:}
+        w=${rest%%:*} a=${rest#*:}
+        case "$e$a" in *[!0-9]*) echo "CLAWBACK in $CONF: $x: the epoch and the amount are numbers" >&2; exit 1 ;; esac
+        [ "$e" = "$n" ] || continue
+        case "$wallets" in *" $w "*) echo "CLAWBACK in $CONF: $w named twice for epoch $n" >&2; exit 1 ;; esac
+        wallets="$wallets$w "
+        mine_cb="$mine_cb $x"
     done
-    mine_cb=$(printf '%s\n' $mine_cb | sort | tr '\n' ' ' | sed 's/ *$//')
+    mine_cb=$(printf '%s\n' $mine_cb | LC_ALL=C sort | tr '\n' ' ' | sed 's/ *$//')
     if [ "$mine_cb" != "$theirs_cb" ]; then
         echo "epoch $n: the electrode recorded the over-claims [$theirs_cb], CLAWBACK in $CONF names [$mine_cb] for it: not posted" >&2
         exit 1
