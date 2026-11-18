@@ -58,6 +58,8 @@ EPOCHS=$REPORTS/epochs
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 
+# The hub history neon-token read before, kept by systemd (CacheDirectory=): only what is new is read.
+[ -n "${CACHE_DIRECTORY:-}" ] && export NEON_TOKEN_CACHE="${NEON_TOKEN_CACHE:-$CACHE_DIRECTORY}"
 tok() {
     if [ -n "$KEYPAIR" ]; then
         "$NEON_TOKEN" --url "$URL" --keypair "$KEYPAIR" "$@"
@@ -157,6 +159,8 @@ for x in ${CLAWBACK:-}; do
     e=${x%%:*} rest=${x#*:}
     w=${rest%%:*} a=${rest#*:}
     case "$e$a" in *[!0-9]*) echo "CLAWBACK in $CONF: $x: the epoch and the amount are numbers"; exit 1 ;; esac
+    # No leading zeros (01 would pass as text and never equal the epoch: lost, not refused).
+    case "$e" in 0?*) echo "CLAWBACK in $CONF: $x: the epoch without leading zeros"; exit 1 ;; esac
     [ "$e" = "$N" ] || continue
     case "$wallets" in *" $w "*) echo "CLAWBACK in $CONF: $w named twice for epoch $N"; exit 1 ;; esac
     wallets="$wallets$w "
