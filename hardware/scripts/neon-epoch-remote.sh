@@ -27,11 +27,15 @@ case "$n" in
 esac
 case "$what" in
     list)
+        # File names expanded here only (`set -f` above switched them off for the request, and
+        # with it this list: it always answered none, so hq never posted; owner 2026-11-17).
+        set +f
         for f in "$EPOCHS"/pending/epoch-*.json; do
             [ -e "$f" ] || continue
             f=${f##*/epoch-}
             echo "${f%.json}"
         done | sort -n
+        set -f
         ;;
     get) cat "$EPOCHS/pending/epoch-$n.json" ;;
     prev)
