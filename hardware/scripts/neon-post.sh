@@ -57,6 +57,8 @@ remote() {
     ssh -i "$SSH_KEY" -p "$PORT" -o BatchMode=yes -o ConnectTimeout=30 \
         -o UserKnownHostsFile=/var/lib/neon-post/ssh/known_hosts "$REMOTE" "$@"
 }
+# The hub history neon-token read before, kept by systemd (CacheDirectory=): only what is new is read.
+[ -n "${CACHE_DIRECTORY:-}" ] && export NEON_TOKEN_CACHE="${NEON_TOKEN_CACHE:-$CACHE_DIRECTORY}"
 tok() { "$NEON_TOKEN" --url "$URL" --keypair "$KEYPAIR" "$@"; }
 # The same JSON whatever the key order or spacing (review 2026-11-16: compared byte for byte, a
 # difference in writing alone would stop every following epoch).
@@ -78,6 +80,8 @@ waiting=$(remote list)
 for n in $waiting; do
     case "$n" in "" | *[!0-9]*) echo "not an epoch number from the electrode: $n" >&2; exit 1 ;; esac
     next=$(tok next-epoch)
+    # A number, or nothing is decided from it (a failed test would read as "no" and post).
+    case "$next" in "" | *[!0-9]*) echo "next-epoch gave '$next', not a number: nothing done" >&2; exit 1 ;; esac
     if [ "$n" -lt "$next" ]; then
         echo "epoch $n is on chain already: filing it"
         # The electrode's copy, not one kept here: posted by hand, or kept from a run whose post
@@ -250,6 +254,8 @@ for n in $waiting; do
         e=${x%%:*} rest=${x#*:}
         w=${rest%%:*} a=${rest#*:}
         case "$e$a" in *[!0-9]*) echo "CLAWBACK in $CONF: $x: the epoch and the amount are numbers" >&2; exit 1 ;; esac
+        # No leading zeros (01 would pass as text and never equal the epoch: lost, not refused).
+        case "$e" in 0?*) echo "CLAWBACK in $CONF: $x: the epoch without leading zeros" >&2; exit 1 ;; esac
         [ "$e" = "$n" ] || continue
         case "$wallets" in *" $w "*) echo "CLAWBACK in $CONF: $w named twice for epoch $n" >&2; exit 1 ;; esac
         wallets="$wallets$w "

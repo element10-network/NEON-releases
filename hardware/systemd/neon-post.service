@@ -11,6 +11,9 @@ User=ne
 Group=ne
 NoNewPrivileges=yes
 PrivateTmp=yes
+# Where neon-token keeps the hub history it read (finalized: never changes): each run reads only
+# what is new, however many transactions others add naming the hub accounts (review 2026-11-18).
+CacheDirectory=neon-post
 ProtectSystem=full
 ProtectHome=read-only
 ExecStart=/bin/sh /opt/neon-post/neon-post.sh
