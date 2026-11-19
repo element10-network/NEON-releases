@@ -1,0 +1,10 @@
+[Unit]
+Description=NEON vault: install the newest signed release, if newer (vault.sh update auto)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# The same checks as Update in the menu (signed by a release key, never older); only a newer
+# release is installed. Turned on and off in the menu (Automatic updates).
+ExecStart=/bin/sh /opt/neon-vault/vault.sh update auto

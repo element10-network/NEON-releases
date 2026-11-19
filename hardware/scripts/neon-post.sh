@@ -34,6 +34,15 @@
 #                                              (default: this directory, when it exists; this
 #                                              user must be able to write it: sudo chown -R ne: it)
 set -eu
+# After each run (neon-post.service's ExecStopPost): when it ended and how, kept on disk, so the
+# vault's Status and monitor show the last run after a restart too (systemd forgets it; owner
+# 2026-11-19). "<Unix seconds> <result> <exit status>", the result as systemd gives it (success,
+# exit-code, timeout...).
+if [ "${1:-}" = --record-run ]; then
+    f=/var/lib/neon-post/last-run
+    printf '%s %s %s\n' "$(date +%s)" "${SERVICE_RESULT:-unknown}" "${EXIT_STATUS:-?}" > "$f.tmp" && mv -f "$f.tmp" "$f"
+    exit 0
+fi
 CONF=${NEON_POST_CONF:-/etc/neon/post.conf}
 [ -f "$CONF" ] || { echo "no settings: $CONF"; exit 1; }
 . "$CONF"

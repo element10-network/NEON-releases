@@ -17,3 +17,5 @@ CacheDirectory=neon-post
 ProtectSystem=full
 ProtectHome=read-only
 ExecStart=/bin/sh /opt/neon-post/neon-post.sh
+# When it ended and how, kept in /var/lib/neon-post/last-run (systemd forgets it at a restart).
+ExecStopPost=/bin/sh /opt/neon-post/neon-post.sh --record-run

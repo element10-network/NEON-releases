@@ -7,7 +7,8 @@
 #
 #   vault.sh menu           the console menu (started on tty1 after logging in)
 #   vault.sh status         what it is doing, as text
-#   vault.sh update         install the newest signed release's neon-oracle, neon-token and scripts
+#   vault.sh update [auto]  install the newest signed release's neon-oracle, neon-token and scripts
+#                           (auto: only a newer one; neon-vault-update.timer, Automatic updates in the menu)
 #   vault.sh import DIR     take post.conf, the admin key and the SSH key from DIR (a USB stick)
 #   vault.sh wipe DIR       erase those files from DIR once imported
 #   vault.sh monitor         the always-on screen: the vault and the network at a glance, every
@@ -54,7 +55,7 @@ vle() { [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n 1)" = "$1" ]; }
 
 # ---- update: the newest stable release's tools and scripts, checked ----
 update() {
-    [ "$(id -u)" = 0 ] || { as_root "$0" update; return; }
+    [ "$(id -u)" = 0 ] || { as_root "$0" update "${1:-}"; return; }
     arch=$(uname -m)
     case "$arch" in aarch64) target=aarch64-unknown-linux-gnu ;; x86_64) target=x86_64-unknown-linux-gnu ;; *) die "no tools for $arch" ;; esac
     curl -fsSL -H "Accept: application/vnd.github+json" -o "$TMP/latest.json" "https://api.github.com/repos/$GH_REPO/releases/latest" ||
@@ -65,6 +66,8 @@ update() {
     version=${tag#v}
     have=$(cat "$HOME_DIR/version" 2>/dev/null || echo 0.0.0)
     vle "$have" "$version" || die "the newest release ($version) is older than the one installed ($have): not installed"
+    # The timer's run: nothing to do on the same version (the menu's Update installs it again).
+    if [ "${1:-}" = auto ] && [ "$have" = "$version" ]; then echo "release $version is installed: nothing to update"; return 0; fi
     asset() {
         url=$(jq -r --arg n "$1" '[.assets[]? | select(.name == $n) | .browser_download_url][0] // empty' "$TMP/latest.json")
         [ -n "$url" ] || return 1
@@ -102,10 +105,19 @@ update() {
     mkdir -p "$POST_DIR" "$HOME_DIR"
     install -m 755 "$TMP/src/hardware/scripts/neon-post.sh" "$POST_DIR/neon-post.sh"
     install -m 644 "$TMP/src/hardware/systemd/neon-post.service" "$TMP/src/hardware/systemd/neon-post.timer" /etc/systemd/system/
+    # The automatic updates' units (turned on in the menu, off until then).
+    for u in neon-vault-update.service neon-vault-update.timer; do
+        [ -f "$TMP/src/hardware/systemd/$u" ] && install -m 644 "$TMP/src/hardware/systemd/$u" /etc/systemd/system/
+    done
     [ -f "$TMP/src/hardware/systemd/neon-vault-monitor.service" ] &&
         install -m 644 "$TMP/src/hardware/systemd/neon-vault-monitor.service" /etc/systemd/system/
     install -m 755 "$TMP/src/hardware/vault/vault.sh" "$HOME_DIR/vault.sh"
     systemctl daemon-reload
+    # The posting log kept across restarts too (journald writes to disk once this folder exists).
+    if [ ! -d /var/log/journal ]; then
+        mkdir -p /var/log/journal && systemd-tmpfiles --create --prefix /var/log/journal >/dev/null 2>&1 || true
+        journalctl --flush >/dev/null 2>&1 || true
+    fi
     echo "$version" > "$HOME_DIR/version"
     # The NEON-token commit, only for a neon-token installed now (one kept keeps its own).
     [ -f "$TMP/neon-token" ] && sed -n 's/^token-commit //p' "$TMP/tools.txt" > "$HOME_DIR/token-commit"
@@ -144,7 +156,7 @@ import() {
     firewall
     echo "imported: $CONF, the admin key and the SSH key (in $STATE)."
     # (From a stick: its copies are wiped next. From the old machine over SSH, fetch wipes its own.)
-    [ -n "${VAULT_FETCH:-}" ] || echo "Wipe the stick's copies next (menu: Wipe the stick's copies)."
+    [ -n "${VAULT_FETCH:-}" ] || echo "Wipe the stick's copies next (menu: Import settings and keys..., Wipe the stick's copies)."
 }
 
 wipe() {
@@ -218,6 +230,11 @@ plain() { tr '\n' ' ' | tr -d '\000-\037\177' | cut -c1-"${1:-200}"; }
 rpc_url() { case "$1" in devnet|"") echo https://api.devnet.solana.com ;; mainnet|mainnet-beta) echo https://api.mainnet-beta.solana.com ;; testnet) echo https://api.testnet.solana.com ;; *) echo "$1" ;; esac; }
 status() {
     echo "Release      $(cat "$HOME_DIR/version" 2>/dev/null || echo 'none yet (Update tools)')"
+    if systemctl is-enabled -q neon-vault-update.timer 2>/dev/null; then
+        echo "Updates      automatic, next $(systemctl show neon-vault-update.timer -p NextElapseUSecRealtime --value 2>/dev/null)"
+    else
+        echo "Updates      by hand (menu: Update tools)"
+    fi
     # (The DHCP clients' sockets, 68 and 546, are not services; the firewall drops all of it anyway.)
     open=$(ss -Htuln 2>/dev/null | awk '{print $5}' | grep -v -E '^(127\.|\[::1\]|.*%lo:)' | grep -v -E ':(68|546)$' | wc -l)
     echo "Listening    $open port(s) open to the network$( [ "$open" = 0 ] && echo ' (as it should be)')"
@@ -231,8 +248,15 @@ status() {
     else
         echo "Posting      timer off (turn it on in the menu once the old machine's is off)"
     fi
-    last=$(systemctl show neon-post.service -p ExecMainExitTimestamp --value 2>/dev/null || true)
-    echo "Last run     ${last:-never}${last:+ ($(systemctl show neon-post.service -p Result --value 2>/dev/null))}"
+    # From the file each run leaves (neon-post.sh --record-run), which a restart keeps; systemd's
+    # own memory of it before that file existed.
+    if read -r t r x < "$STATE/last-run" 2>/dev/null && case "$t" in "" | *[!0-9]*) false ;; *) true ;; esac; then
+        r=$(printf '%s' "$r" | tr -cd 'a-z-'); x=$(printf '%s' "$x" | tr -cd '0-9A-Z?')
+        echo "Last run     $(date -d "@$t" '+%a %Y-%m-%d %H:%M:%S %Z') (${r:-unknown}$( [ "$r" = success ] || echo ", exit ${x:-?}"))"
+    else
+        last=$(systemctl show neon-post.service -p ExecMainExitTimestamp --value 2>/dev/null || true)
+        echo "Last run     ${last:-never}${last:+ ($(systemctl show neon-post.service -p Result --value 2>/dev/null))}"
+    fi
     if [ -x "$BIN/neon-token" ]; then
         echo "Next epoch   $(timeout 30 "$BIN/neon-token" --url "${url:-devnet}" next-epoch 2>/dev/null || echo '? (no answer from the chain)') (on chain)"
     fi
@@ -406,6 +430,8 @@ monitor_top() {
         -e "s/timer off/${yellow}timer off${off}/" \
         -e "s/(success)/${green}(success)${off}/" \
         -e "s/(exit-code)/${red}(failed)${off}/" \
+        -e "s/(exit-code, exit \([^)]*\))/${red}(failed, exit \1)${off}/" \
+        -e "s/(\(timeout\|signal\|core-dump\|oom-kill\|resources\)[^)]*)/${red}&${off}/" \
         -e "s/? (no answer[^)]*)/${red}&${off}/" \
         -e '/^Admin key/d'
     # The machine itself.
@@ -447,16 +473,14 @@ menu() {
     command -v whiptail >/dev/null || die "whiptail missing (vault-setup.sh installs it)"
     while :; do
         c=$(whiptail --title "NEON vault" --notags --cancel-button "Shell" --menu \
-            "$(hostname) · $(date -u '+%Y-%m-%d %H:%M UTC') · release $(cat "$HOME_DIR/version" 2>/dev/null || echo none)" 20 72 10 \
+            "$(hostname) · $(date -u '+%Y-%m-%d %H:%M UTC') · release $(cat "$HOME_DIR/version" 2>/dev/null || echo none)" 20 72 11 \
             status "Status" \
             post "Post now (what the electrode has waiting)" \
             log "Posting log" \
             update "Update tools (newest signed release)" \
+            auto "Automatic updates on / off" \
             monitor "The monitor (on the first screen, Alt+F1; back here: Alt+F2)" \
-            fetch "Import settings and keys from the old posting machine (SSH)" \
-            import "Import settings and keys from a USB stick" \
-            wipe "Wipe the stick's copies" \
-            eject "Unmount the stick" \
+            keys "Import settings and keys (old machine, USB stick)..." \
             timer "Posting timer on / off" \
             edit "Edit settings (post.conf)" \
             reboot "Restart" \
@@ -468,11 +492,14 @@ menu() {
             log) journalctl -u neon-post -n 300 -o short-iso --no-pager > /tmp/vault-log 2>&1 || true; whiptail --title "Posting log" --scrolltext --textbox /tmp/vault-log 22 78 ;;
             update) clear; "$0" update > /tmp/vault-update 2>&1 || true; whiptail --title "Update" --scrolltext --textbox /tmp/vault-update 20 78 ;;
             monitor) whiptail --msgbox "The monitor runs on the first screen all the time: Alt+F1 shows it, Alt+F2 comes back here. Nothing can be typed there." 10 60 ;;
-            fetch) h=$(whiptail --inputbox "The old posting machine, as USER@HOST (its address on this network works too)" 9 72 3>&1 1>&2 2>&3) || continue
-                p=$(whiptail --inputbox "Its SSH port" 9 40 22 3>&1 1>&2 2>&3) || continue
-                clear; "$0" fetch "$h" "$p" || true; printf '\nEnter to go back to the menu. '; read -r _ ;;
-            import|wipe) d=$(whiptail --inputbox "The stick's neon-vault folder (plug the stick in first)" 9 72 "$(stick)" 3>&1 1>&2 2>&3) || continue
-                clear; "$0" "$c" "$d" > /tmp/vault-out 2>&1 || true; whiptail --title "$c" --scrolltext --textbox /tmp/vault-out 16 78 ;;
+            auto) if systemctl is-enabled -q neon-vault-update.timer 2>/dev/null; then
+                    whiptail --yesno "Turn automatic updates off? Updates are then only installed with Update tools." 9 70 && as_root systemctl disable --now neon-vault-update.timer || true
+                elif [ ! -f /etc/systemd/system/neon-vault-update.timer ]; then
+                    whiptail --msgbox "Update tools once first (this release's timer is not installed yet)." 8 60
+                else
+                    whiptail --yesno "Turn automatic updates on? Every day around 12:00 UTC the vault installs a newer release if there is one, with the same checks as Update tools (signed by a release key, never older), and never during a posting run." 11 72 && as_root systemctl enable --now neon-vault-update.timer || true
+                fi ;;
+            keys) keys_menu ;;
             timer) if systemctl is-enabled -q neon-post.timer 2>/dev/null; then
                     whiptail --yesno "Turn the posting timer off? Nothing is posted until it is on again." 9 70 && as_root systemctl disable --now neon-post.timer || true
                 else
@@ -480,9 +507,29 @@ menu() {
                 fi ;;
             # A port changed in the settings is opened at once.
             edit) as_root nano "$CONF" || true; as_root "$0" firewall > /tmp/vault-out 2>&1 || whiptail --title "Firewall" --scrolltext --textbox /tmp/vault-out 16 78 ;;
-            eject) sync; as_root umount /mnt/stick 2>/dev/null || true; whiptail --msgbox "The stick can be taken out." 7 40 ;;
             reboot) whiptail --yesno "Restart the vault?" 8 40 && as_root systemctl reboot || true ;;
             off) whiptail --yesno "Shut the vault down? Nothing is posted while it is off." 8 64 && as_root systemctl poweroff || true ;;
+        esac
+    done
+}
+
+# The import's own menu (owner 2026-11-19): from the old posting machine over SSH, or from a USB
+# stick (then its copies wiped and the stick unmounted). "Back" returns to the main menu.
+keys_menu() {
+    while :; do
+        c=$(whiptail --title "Settings and keys" --notags --cancel-button "Back" --menu \
+            "post.conf, the admin key and the SSH key, once, from the old posting machine" 14 72 4 \
+            fetch "From the old posting machine (SSH)" \
+            import "From a USB stick" \
+            wipe "Wipe the stick's copies" \
+            eject "Unmount the stick" 3>&1 1>&2 2>&3) || return 0
+        case "$c" in
+            fetch) h=$(whiptail --inputbox "The old posting machine, as USER@HOST (its address on this network works too)" 9 72 3>&1 1>&2 2>&3) || continue
+                p=$(whiptail --inputbox "Its SSH port" 9 40 22 3>&1 1>&2 2>&3) || continue
+                clear; "$0" fetch "$h" "$p" || true; printf '\nEnter to go back to the menu. '; read -r _ ;;
+            import|wipe) d=$(whiptail --inputbox "The stick's neon-vault folder (plug the stick in first)" 9 72 "$(stick)" 3>&1 1>&2 2>&3) || continue
+                clear; "$0" "$c" "$d" > /tmp/vault-out 2>&1 || true; whiptail --title "$c" --scrolltext --textbox /tmp/vault-out 16 78 ;;
+            eject) sync; as_root umount /mnt/stick 2>/dev/null || true; whiptail --msgbox "The stick can be taken out." 7 40 ;;
         esac
     done
 }
@@ -492,7 +539,7 @@ trap 'rm -rf "$TMP"' EXIT
 case "${1:-menu}" in
     menu) menu ;;
     status) status ;;
-    update) update ;;
+    update) update "${2:-}" ;;
     import) import "${2:-}" ;;
     wipe) wipe "${2:-}" ;;
     fetch) fetch "${2:-}" "${3:-}" ;;
