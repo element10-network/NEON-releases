@@ -29,8 +29,8 @@ done
 
 echo "==> Folders"
 # A box set up as the key box (before 2026-11-19): its settings, keys and epochs stay where they are
-# (/etc/neon, /var/lib/neon-post); only the menu moves to /opt/neon-vault.
-rm -rf /opt/neon-keybox
+# (/etc/neon, /var/lib/neon-post); only the menu moves to /opt/neon-vault (the old one is removed
+# once the new one is installed).
 mkdir -p /opt/neon-vault /opt/neon-post /var/lib/neon-post /etc/neon
 chown ne:ne /var/lib/neon-post && chmod 700 /var/lib/neon-post
 
@@ -39,26 +39,22 @@ echo "==> The newest signed release"
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 curl -fsSL -o "$tmp/vault.sh" "https://raw.githubusercontent.com/element10-network/NEON-releases/main/hardware/vault/vault.sh"
-sh "$tmp/vault.sh" update
-
+# The firewall first (review 2026-11-19): nothing comes in from here on, the update included.
 echo "==> Firewall"
-sh /opt/neon-vault/vault.sh firewall
+sh "$tmp/vault.sh" firewall
+echo "==> Tools"
+sh "$tmp/vault.sh" update
+rm -rf /opt/neon-keybox
 
-echo "==> The menu on the screen"
-profile=/home/ne/.bash_profile
-touch "$profile"
-# The key box's lines (before 2026-11-19) go.
-sed -i "/The key box's menu/d; /keybox.sh menu/d" "$profile"
-grep -q '^\[ -f ~/.bashrc \]' "$profile" || echo '[ -f ~/.bashrc ] && . ~/.bashrc' >> "$profile"
-grep -q 'vault.sh menu' "$profile" || cat >> "$profile" <<'EOF'
-# The vault's menu on its own screen (vault.sh); "Shell" in it leaves to this shell.
-if [ "$(tty)" = /dev/tty1 ] && [ -z "${VAULT_SHELL:-}" ]; then /opt/neon-vault/vault.sh menu; fi
-EOF
-chown ne:ne "$profile"
+echo "==> The screens"
+# (The update above put the monitor on the first console and the menu on the others: vault.sh screens.)
+grep -q 'vault.sh menu' /home/ne/.bash_profile 2>/dev/null || sh /opt/neon-vault/vault.sh screens
 
 echo
-echo "Done. Next, in the menu (log out and in again, or run /opt/neon-vault/vault.sh menu):"
-echo "  1. Import settings and keys from a USB stick (made on the old posting machine; docs/HUB.md \"The vault\")"
-echo "  2. Wipe the stick's copies, Unmount the stick"
-echo "  3. Status: the electrode answers, the admin key has SOL"
-echo "  4. Turn the old machine's posting timer off, then here: Posting timer on"
+echo "Done. After the next restart (sudo reboot) the first screen (Alt+F1) shows the monitor; the menu is"
+echo "on the next one (Alt+F2, log in as ne)."
+echo "Next, in the menu:"
+echo "  1. Import settings and keys from the old posting machine (SSH), or from a USB stick made on it"
+echo "     (docs/HUB.md \"The vault\"); from a stick: Wipe the stick's copies, Unmount the stick"
+echo "  2. Status: the electrode answers, the admin key has SOL"
+echo "  3. Turn the old machine's posting timer off, then here: Posting timer on"

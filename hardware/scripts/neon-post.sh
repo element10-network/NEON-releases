@@ -75,6 +75,23 @@ file_local() {
     fi
 }
 
+# A kept epoch whose root the chain says is not there or another one (the guardian cancelled it and
+# it was posted again): set aside to cancelled/. Only on the chain's word, as neon-epoch.sh moves
+# its own (review 2026-11-19: an RPC error was taken as "cancelled"); an RPC that does not answer
+# leaves it where it is.
+set_aside_cancelled() {
+    f="$KEEP/epoch-$1.json"
+    [ -s "$f" ] || return 0
+    chk=$(tok check "$f" 2>&1 || true)
+    case "$chk" in
+        *"has no root on chain"* | *"is not the one on chain"*)
+            mkdir -p "$KEEP/cancelled"
+            mv "$f" "$KEEP/cancelled/epoch-$1.json.$(date -u +%Y%m%dT%H%M%SZ)"
+            echo "epoch $1: the one kept here is not the root on chain (cancelled and posted again): moved to $KEEP/cancelled/" >&2
+            ;;
+    esac
+}
+
 waiting=$(remote list)
 [ -n "$waiting" ] || { echo "no epoch waiting"; exit 0; }
 for n in $waiting; do
@@ -93,6 +110,10 @@ for n in $waiting; do
             echo "epoch $n: not filed: its file could not be matched with the root on chain (the reason above; a NEON-token CLI older than bd12b03 has no 'check': rebuild it)" >&2
             exit 1
         fi
+        # One kept here whose root is not the one on chain was cancelled by the guardian and the
+        # epoch posted again since (review 2026-11-19: it was refused on every run, epoch n+1 stuck):
+        # moved aside, the electrode's file (checked above) taken instead.
+        set_aside_cancelled "$n"
         # Kept here already (posted from here): the electrode's copy must be that same file. It
         # carries what the root does not cover (wallets named, amounts held, onboarded hotspots,
         # core hubs, the hardware rule) and becomes the next epoch's previous (review 2026-11-13).
@@ -128,6 +149,10 @@ for n in $waiting; do
     # The previous result as this machine kept it when it posted it (it carries state the root
     # does not cover: wallets named before, amounts held, onboarded hotspots, earlier roots): the
     # electrode's copy must be the same file.
+    # (One kept here that the guardian cancelled, epoch n-1 posted again elsewhere: set aside.)
+    if [ -s "$KEEP/epoch-$((n - 1)).json" ] && ! same_json "$KEEP/epoch-$((n - 1)).json" "$KEEP/epoch-$((n - 1)).json.part"; then
+        set_aside_cancelled "$((n - 1))"
+    fi
     if [ -s "$KEEP/epoch-$((n - 1)).json" ] && ! same_json "$KEEP/epoch-$((n - 1)).json" "$KEEP/epoch-$((n - 1)).json.part"; then
         echo "epoch $((n - 1)) on the electrode differs from the one posted from here: epoch $n not posted" >&2
         exit 1
@@ -245,6 +270,7 @@ for n in $waiting; do
     # be lost for good: it is recorded with its epoch only). Each N:<wallet>:<amount>.
     # Checked as the electrode checks them (neon-epoch.sh): numbers, one per wallet and epoch.
     mine_cb="" wallets=" "
+    # (The same checks as neon-epoch.sh's: change both together; eu1 and hq must refuse the same entries.)
     for x in $CLAWBACK; do
         case "$x" in
             *[!0-9A-Za-z:]* | *:*:*:* | :* | *: | *::*) echo "CLAWBACK in $CONF: $x is not N:<wallet>:<amount>" >&2; exit 1 ;;

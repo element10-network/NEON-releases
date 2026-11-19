@@ -10,8 +10,13 @@
 #   vault.sh update         install the newest signed release's neon-oracle, neon-token and scripts
 #   vault.sh import DIR     take post.conf, the admin key and the SSH key from DIR (a USB stick)
 #   vault.sh wipe DIR       erase those files from DIR once imported
+#   vault.sh monitor         the always-on screen: the vault and the network at a glance, every
+#                            minute (neon-vault-monitor.service shows it on tty1 without a login;
+#                            the menu is on the next console, Alt+F2)
 #   vault.sh fetch USER@HOST [PORT]   import straight from the old posting machine over SSH (into
 #                            memory only, then imported and wiped: no stick, nothing typed but the login)
+#   vault.sh screens        the monitor on the first console, the menu on the others (as root)
+#   vault.sh firewall       write and load the firewall from the settings (as root)
 #
 # Updates come from the public element10-network/NEON-releases: tools.txt and scripts.txt, each
 # checked against a release key built into this script (as into neond and setup.sh; a test keeps
@@ -97,12 +102,17 @@ update() {
     mkdir -p "$POST_DIR" "$HOME_DIR"
     install -m 755 "$TMP/src/hardware/scripts/neon-post.sh" "$POST_DIR/neon-post.sh"
     install -m 644 "$TMP/src/hardware/systemd/neon-post.service" "$TMP/src/hardware/systemd/neon-post.timer" /etc/systemd/system/
+    [ -f "$TMP/src/hardware/systemd/neon-vault-monitor.service" ] &&
+        install -m 644 "$TMP/src/hardware/systemd/neon-vault-monitor.service" /etc/systemd/system/
     install -m 755 "$TMP/src/hardware/vault/vault.sh" "$HOME_DIR/vault.sh"
     systemctl daemon-reload
     echo "$version" > "$HOME_DIR/version"
     # The NEON-token commit, only for a neon-token installed now (one kept keeps its own).
     [ -f "$TMP/neon-token" ] && sed -n 's/^token-commit //p' "$TMP/tools.txt" > "$HOME_DIR/token-commit"
-    echo "installed release $version (neon-oracle, neon-token, neon-post.sh, the vault's menu)"
+    # The monitor on the first screen, the menu on the others (with this release's menu and unit).
+    # (A failure there leaves the release installed: Update again, or vault.sh screens.)
+    if [ -f /etc/systemd/system/neon-vault-monitor.service ]; then "$HOME_DIR/vault.sh" screens || true; fi
+    echo "installed release $version (neon-oracle, neon-token, neon-post.sh, the vault's menu and monitor)"
 }
 
 # ---- import: settings and keys from a USB stick, made on the old posting machine ----
@@ -132,7 +142,9 @@ import() {
     chown -R "$USER_NAME:$USER_NAME" "$STATE"
     chmod 700 "$STATE" "$STATE/ssh"
     firewall
-    echo "imported: $CONF, the admin key and the SSH key (in $STATE). Wipe the stick's copies next (menu: Wipe the stick)."
+    echo "imported: $CONF, the admin key and the SSH key (in $STATE)."
+    # (From a stick: its copies are wiped next. From the old machine over SSH, fetch wipes its own.)
+    [ -n "${VAULT_FETCH:-}" ] || echo "Wipe the stick's copies next (menu: Wipe the stick's copies)."
 }
 
 wipe() {
@@ -140,13 +152,18 @@ wipe() {
     # As root: a stick mounted without uid= holds files ne cannot remove.
     [ "$(id -u)" = 0 ] || { as_root "$0" wipe "$d"; return; }
     for f in admin.json ssh/id_ed25519 ssh/id_ed25519.pub ssh/known_hosts post.conf; do
-        [ -f "$d/$f" ] && shred -u "$d/$f"
+        # (Not through a link: shred would erase what it points to.)
+        if [ -L "$d/$f" ]; then rm -f "$d/$f"; elif [ -f "$d/$f" ]; then shred -u "$d/$f"; fi
     done
     # (The epochs are public: removed, not shredded.)
     rm -rf "$d/epochs"
     rmdir "$d/ssh" "$d" 2>/dev/null || true
     sync
-    echo "erased from $d (on a flash stick shred cannot reach every copy: keep the stick with the vault, or destroy it)"
+    if [ -n "${VAULT_FETCH:-}" ]; then
+        echo "the copy in memory wiped"
+    else
+        echo "erased from $d (on a flash stick shred cannot reach every copy: keep the stick with the vault, or destroy it)"
+    fi
 }
 
 # ---- firewall: nothing in; out only DNS, DHCP, time, HTTP(S) and the electrode's SSH port ----
@@ -154,7 +171,7 @@ firewall() {
     # The SSH port as neon-post.sh reads it (quoted or not), and any port an RPC address names.
     ports=$(conf PORT)
     case "$ports" in "" | *[!0-9]*) ports=22 ;; esac
-    for u in "$(conf URL)" "$(conf HELIUM_RPC)"; do
+    for u in "$(conf URL)" "$(conf HELIUM_RPC)" "$(conf EXPLORE)"; do
         p=$(echo "$u" | sed -n 's|^[a-z]*://[^/:]*:\([0-9][0-9]*\).*|\1|p')
         [ -n "$p" ] && ports="$ports, $p"
     done
@@ -193,6 +210,11 @@ EOF
 
 # ---- status ----
 conf() { sed -n "s/^$1=//p" "$CONF" 2>/dev/null | tail -n 1 | sed "s/^[\"']//; s/[\"']\$//"; }
+# An address as shown on the screen: its scheme and host only (an RPC address can carry an API key in
+# its path, query or user part; review 2026-11-19). A name such as devnet as it is.
+url_host() { case "$1" in *://*) echo "$1" | sed -E 's|^([A-Za-z][A-Za-z0-9+.-]*://)([^@/?#]*@)?([^/?#]*).*|\1\3|' ;; *) echo "$1" ;; esac; }
+# Text from elsewhere on the screen: no control characters (no escape sequences), one line, cut.
+plain() { tr '\n' ' ' | tr -d '\000-\037\177' | cut -c1-"${1:-200}"; }
 rpc_url() { case "$1" in devnet|"") echo https://api.devnet.solana.com ;; mainnet|mainnet-beta) echo https://api.mainnet-beta.solana.com ;; testnet) echo https://api.testnet.solana.com ;; *) echo "$1" ;; esac; }
 status() {
     echo "Release      $(cat "$HOME_DIR/version" 2>/dev/null || echo 'none yet (Update tools)')"
@@ -201,9 +223,9 @@ status() {
     echo "Listening    $open port(s) open to the network$( [ "$open" = 0 ] && echo ' (as it should be)')"
     # (nft prints the priority by name, "filter", and needs root to list.)
     if as_root nft list chain inet vault input 2>/dev/null | grep -q 'hook input .* policy drop'; then echo "Firewall     incoming dropped"; else echo "Firewall     NOT ON (Set up again)"; fi
-    if [ ! -s "$CONF" ]; then echo "Settings     none yet (Import from a USB stick)"; return 0; fi
+    if [ ! -s "$CONF" ]; then echo "Settings     none yet (Import: from the old posting machine over SSH, or a USB stick)"; return 0; fi
     url=$(conf URL); remote=$(conf REMOTE); port=$(conf PORT)
-    echo "Network      ${url:-devnet}, electrode ${remote:-?} (port ${port:-22})"
+    echo "Network      $(url_host "${url:-devnet}"), electrode ${remote:-?} (port ${port:-22})"
     if systemctl is-enabled -q neon-post.timer 2>/dev/null; then
         echo "Posting      timer on, next $(systemctl show neon-post.timer -p NextElapseUSecRealtime --value 2>/dev/null)"
     else
@@ -224,9 +246,18 @@ print("1"*(len(b)-len(b.lstrip(b"\0")))+s)')
         echo "SOL          $( [ -n "$lam" ] && awk -v l="$lam" 'BEGIN{printf "%.4f", l/1e9}' || echo '? (no answer)')"
     fi
     if [ -s "$STATE/ssh/id_ed25519" ] || as_root test -s "$STATE/ssh/id_ed25519"; then
-        waiting=$(as_user ssh -i "$STATE/ssh/id_ed25519" -p "${port:-22}" -o BatchMode=yes -o ConnectTimeout=15 \
-            -o UserKnownHostsFile="$STATE/ssh/known_hosts" "$remote" list 2>/dev/null | tr '\n' ' ')
-        echo "On electrode ${waiting:-? (no answer)}"
+        # An empty list is an answer too (nothing waiting); no answer at all is a failed login or network.
+        # The monitor asks every 10 minutes, not every minute (a login on the electrode each time).
+        if [ -n "${VAULT_MONITOR:-}" ] && [ -f "$TMP/waiting.line" ] && [ -n "$(find "$TMP/waiting.line" -mmin -10 2>/dev/null)" ]; then
+            cat "$TMP/waiting.line"
+        elif as_user ssh -i "$STATE/ssh/id_ed25519" -p "${port:-22}" -o BatchMode=yes -o ConnectTimeout=15 \
+            -o UserKnownHostsFile="$STATE/ssh/known_hosts" "$remote" list > "$TMP/waiting" 2>/dev/null; then
+            waiting=$(plain 120 < "$TMP/waiting")
+            echo "On electrode ${waiting:-answers, nothing waiting}" | tee "$TMP/waiting.line"
+        else
+            rm -f "$TMP/waiting.line"
+            echo "On electrode ? (no answer: the electrode, its port or the SSH key)"
+        fi
     fi
 }
 
@@ -254,15 +285,161 @@ fetch() {
     dir=$(mktemp -d /dev/shm/neon-vault-fetch.XXXXXX)
     # Whatever happens: the copy wiped from memory, the firewall as the settings say.
     trap 'as_root "$0" wipe "$dir/neon-vault" >/dev/null 2>&1 || true; rm -rf "$dir" "$TMP"; as_root "$0" firewall >/dev/null 2>&1 || true' EXIT
+    # (sh runs the EXIT trap on a signal only through exit: Ctrl+C wipes too, review 2026-11-19.)
+    trap 'exit 130' INT TERM HUP
     as_root nft add rule inet vault output tcp dport "$port" accept 2>/dev/null || true
     echo "Logging in to $from (port $port): accept its host key if asked, then its password."
-    ssh -p "$port" "$from" 'set -e; . /etc/neon/post.conf; T=$(mktemp -d); trap "rm -rf $T" EXIT; D=$T/neon-vault; mkdir -p "$D/ssh" "$D/epochs"; cp /etc/neon/post.conf "$D/"; cp "$KEYPAIR" "$D/admin.json"; cp "$SSH_KEY" "$D/ssh/id_ed25519"; cp /var/lib/neon-post/ssh/known_hosts "$D/ssh/"; for f in /var/lib/neon-post/epochs/epoch-*.json /var/lib/neon-post/epochs/epoch-*.json.from-electrode; do [ ! -f "$f" ] || cp "$f" "$D/epochs/"; done; tar -C "$T" -czf - neon-vault' |
-        tar -C "$dir" -xzf - || die "nothing copied from $from (see the messages above)"
+    # On the old machine too the copy is made in memory (/dev/shm) and shredded after.
+    ssh -p "$port" "$from" 'set -e; . /etc/neon/post.conf; T=$(mktemp -d /dev/shm/neon-vault.XXXXXX 2>/dev/null || mktemp -d); trap "find $T -type f -exec shred -u {} + 2>/dev/null; rm -rf $T" EXIT; D=$T/neon-vault; mkdir -p "$D/ssh" "$D/epochs"; cp /etc/neon/post.conf "$D/"; cp "$KEYPAIR" "$D/admin.json"; cp "$SSH_KEY" "$D/ssh/id_ed25519"; cp /var/lib/neon-post/ssh/known_hosts "$D/ssh/"; for f in /var/lib/neon-post/epochs/epoch-*.json /var/lib/neon-post/epochs/epoch-*.json.from-electrode; do [ ! -f "$f" ] || cp "$f" "$D/epochs/"; done; tar -C "$T" -czf - neon-vault' |
+        tar -C "$dir" --no-same-owner -xzf - || die "nothing copied from $from (see the messages above)"
+    # Plain files and folders only (a link would make the import copy what it points to).
+    [ -z "$(find "$dir" ! -type f ! -type d | head -n 1)" ] || die "the copy from $from holds something that is not a file: not imported"
     echo "Copied:"
     (cd "$dir/neon-vault" && find . -type f | sort)
-    as_root "$0" import "$dir/neon-vault"
-    as_root "$0" wipe "$dir/neon-vault"
+    as_root env VAULT_FETCH=1 "$0" import "$dir/neon-vault"
+    as_root env VAULT_FETCH=1 "$0" wipe "$dir/neon-vault"
     echo "Done: imported, the copy wiped from memory. Next: Status, then turn the old machine's posting timer off and this one's on."
+}
+
+# ---- screens: the monitor on the first console, the menu on the others (after a login) ----
+screens() {
+    [ "$(id -u)" = 0 ] || { as_root "$0" screens; return; }
+    profile=/home/$USER_NAME/.bash_profile
+    touch "$profile"
+    # The key box's and the first vault's lines (the menu on tty1 only) go.
+    # (And this function's own, written again below: never twice.)
+    sed -i "/The key box's menu/d; /keybox.sh menu/d; /The vault's menu on its own screen/d; /vault.sh menu; fi/d; /The vault's menu after logging in/d; /vault.sh menu ;; esac/d" "$profile"
+    grep -q '^\[ -f ~/.bashrc \]' "$profile" || echo '[ -f ~/.bashrc ] && . ~/.bashrc' >> "$profile"
+    cat >> "$profile" <<'EOF2'
+# The vault's menu after logging in on a console (Alt+F2...; the first shows the monitor); "Shell" leaves it.
+case "$(tty)" in /dev/tty[0-9]*) [ -z "${VAULT_SHELL:-}" ] && /opt/neon-vault/vault.sh menu ;; esac
+EOF2
+    chown "$USER_NAME:$USER_NAME" "$profile"
+    # The first console: the monitor instead of a login (nothing can be typed there). Someone logged
+    # in there (the menu that runs this update): not now, it would end that session and this update
+    # with it (review 2026-11-19), but from the next start.
+    systemctl disable getty@tty1.service >/dev/null 2>&1 || true
+    systemctl mask getty@tty1.service >/dev/null 2>&1 || true
+    systemctl enable -q neon-vault-monitor.service
+    if who 2>/dev/null | awk '{print $2}' | grep -qx tty1; then
+        echo "the monitor takes the first screen at the next restart (someone is logged in there now)"
+    else
+        systemctl restart neon-vault-monitor.service
+    fi
+}
+
+# ---- monitor: the vault and the network on its own screen (owner 2026-11-19) ----
+# Read-only: what Status shows, the posting log's last lines, the machine's health, and the
+# electrode's public explorer data (the same as its /explore page: nothing private). Run by
+# neon-vault-monitor.service on tty1; nothing on it can be typed into.
+MONITOR_EVERY=60
+monitor() {
+    [ "$(id -u)" = 0 ] || die "as root (neon-vault-monitor.service runs it)"
+    bold=$(tput bold 2>/dev/null || true); dim=$(tput dim 2>/dev/null || true)
+    green=$(tput setaf 2 2>/dev/null || true); red=$(tput setaf 1 2>/dev/null || true)
+    yellow=$(tput setaf 3 2>/dev/null || true); cyan=$(tput setaf 6 2>/dev/null || true)
+    off=$(tput sgr0 2>/dev/null || true)
+    VAULT_MONITOR=1
+    # No cursor, no screen blanking, no keys (no Ctrl+C, Ctrl+S or echo): an always-on screen.
+    printf '\033[?25l'; setterm --blank 0 --powerdown 0 2>/dev/null || true
+    stty -isig -ixon -icanon -echo 2>/dev/null || true
+    while :; do
+        monitor_screen > "$TMP/screen" 2>&1 || true
+        cols=$(tput cols 2>/dev/null || echo 80); rows=$(tput lines 2>/dev/null || echo 25)
+        printf '\033[H\033[2J'
+        # Each line cut to the screen's width (colours not counted), no more lines than it has:
+        # a long line would wrap and scroll the top away.
+        fit "$cols" < "$TMP/screen" | head -n "$rows"
+        sleep "$MONITOR_EVERY"
+    done
+}
+
+# fit COLS: each line cut to COLS characters, escape sequences (the colours) not counted.
+fit() {
+    awk -v w="$1" -v off="$off" '{
+        s = $0; out = ""; n = 0; esc = 0
+        while (s != "") {
+            if (substr(s, 1, 1) == "\033") {
+                if (match(s, /^\033\[[0-9;?]*[A-Za-z]/) || match(s, /^\033[()][A-Za-z0-9]/)) {
+                    out = out substr(s, 1, RLENGTH); s = substr(s, RLENGTH + 1); esc = 1; continue
+                }
+                s = substr(s, 2); continue
+            }
+            if (n < w) out = out substr(s, 1, 1)
+            n++; s = substr(s, 2)
+        }
+        print out (esc ? off : "")
+    }'
+}
+
+# One screen of the monitor (as text with colours): the fixed part, then as many atoms as fit.
+monitor_screen() {
+    cols=$(tput cols 2>/dev/null || echo 80); rows=$(tput lines 2>/dev/null || echo 25)
+    monitor_top > "$TMP/top" 2>&1 || true
+    cat "$TMP/top"
+    [ -s "$TMP/explore.json" ] || return 0
+    room=$((rows - $(wc -l < "$TMP/top") - 1))
+    [ "$room" -gt 0 ] || return 0
+    # The online ones first, then by photons today.
+    # (The electrode's data as text only: no control characters, numbers as numbers or 0, review 2026-11-19.)
+    jq -r --arg g "$green" --arg r "$red" --arg o "$off" --argjson now "$(date +%s)000" '
+        def clean: if . == null then "" else tostring | gsub("\\p{Cc}"; "") end;
+        def num: if type == "number" then . else (tostring | tonumber? // 0) end;
+        def pad($n): .[0:$n] | . + (" " * ($n - length));
+        [.atoms[]? | objects] | sort_by([(if .online == true then 0 else 1 end), -(.photons_today | num)])[] |
+        "\(if .online == true then $g + "on " else $r + "off" end)\($o) \((if (.name | clean) == "" then (.peer | clean)[0:12] else (.name | clean) end) | pad(18))  \(if .hub == true then "electrode" else "atom     " end)  \((.version | clean | if . == "" then "?" else . end) | pad(8))  \(((.photons_today | num) * 10 | round / 10) | tostring | pad(7)) today  \(if .online == true then "" else if (.last_ms | num) <= 0 then "not seen" else "seen " + ((([$now - (.last_ms | num), 0] | max) / 60000 | floor) as $m | if $m < 60 then "\($m)m" elif $m < 2880 then "\($m / 60 | floor)h" else "\($m / 1440 | floor)d" end) + " ago" end end)"
+    ' "$TMP/explore.json" 2>/dev/null | head -n "$room"
+}
+
+monitor_top() {
+    rule() { printf '%s%s%s\n' "$dim" "$(printf '%*s' "$cols" '' | tr ' ' '-')" "$off"; }
+    title() { printf '%s%s%s\n' "$bold$cyan" "$1" "$off"; }
+    printf '%sNEON vault%s  %s   %s UTC   %s local\n' "$bold" "$off" "$(hostname)" "$(date -u '+%Y-%m-%d %H:%M')" "$(date '+%H:%M %Z')"
+    rule
+    title "VAULT"
+    # Status's own lines, a word coloured where it matters (the admin key's address left out).
+    status 2>/dev/null | sed \
+        -e "s/(as it should be)/${green}(as it should be)${off}/" \
+        -e "s/incoming dropped/${green}incoming dropped${off}/" \
+        -e "s/NOT ON/${red}NOT ON${off}/" \
+        -e "s/timer on/${green}timer on${off}/" \
+        -e "s/timer off/${yellow}timer off${off}/" \
+        -e "s/(success)/${green}(success)${off}/" \
+        -e "s/(exit-code)/${red}(failed)${off}/" \
+        -e "s/? (no answer[^)]*)/${red}&${off}/" \
+        -e '/^Admin key/d'
+    # The machine itself.
+    temp=$(awk '{printf "%.0f", $1/1000}' /sys/class/thermal/thermal_zone0/temp 2>/dev/null || echo '?')
+    disk=$(df -h / 2>/dev/null | awk 'NR==2{print $5" used of "$2}')
+    mem=$(free -m 2>/dev/null | awk '/^Mem:/{printf "%d/%d MB", $3, $2}')
+    printf 'Machine      up %s, %s C, disk %s, memory %s\n' "$(uptime -p 2>/dev/null | sed 's/^up //')" "$temp" "$disk" "$mem"
+    last=$(journalctl -u neon-post -o cat --no-pager -n 200 2>/dev/null | grep -E 'posted:|filed|no epoch waiting|ERROR|not posted|NOT' | tail -n 1)
+    [ -n "$last" ] && printf 'Posting log  %s\n' "$(printf '%s' "$last" | plain $((cols - 13)))"
+    rule
+    # The network, from the electrode's public explorer data (its /explore page's).
+    remote=$(conf REMOTE); explore=$(conf EXPLORE)
+    [ -n "$explore" ] || explore="https://${remote#*@}/api/explore"
+    title "NETWORK  ${dim}$(url_host "$explore")${off}"
+    rm -f "$TMP/explore.json"
+    if [ -n "$remote$(conf EXPLORE)" ] && curl -fsS -m 20 --max-filesize 2000000 --proto =https,http -o "$TMP/explore.json" "$explore" 2>/dev/null && jq -e '.figures | objects' "$TMP/explore.json" >/dev/null 2>&1; then
+        jq -r --arg g "$green" --arg o "$off" '
+            def n: if . == null then "?" else tostring | gsub("\\p{Cc}"; "") end;
+            def neon: if type == "number" then ((. / 1000000) * 100 | round / 100 | tostring) else "?" end;
+            .figures as $f |
+            "Atoms        \($g)\($f.online|n) online\($o) of \($f.atoms|n), \($f.chip_verified|n) chip-verified, \($f.electrodes|n) electrode(s)",
+            "Today        \($f.packets_today|n) packets, \($f.confirmed_today|n) confirmed, \(($f.photons_today | if type == "number" then . else 0 end) * 100 | round / 100) photons",
+            (if (.connections | type) == "object" then .connections as $c |
+                "Connected    \($c.atoms|n) atoms, \($c.behind_router|n) behind a router, \($c.ipv6|n) over IPv6; versions " +
+                ([($c.versions | objects // {}) | to_entries[] | "\(.key|n) x\(.value|n)"] | join(", ")) else empty end),
+            (if (.epochs | type) == "array" and (.epochs | length) > 0 and (.epochs[0] | type) == "object" then .epochs[0] as $e |
+                "Last epoch   \($e.epoch|n) (\($e.start|n) to \($e.end|n)): \($e.total|neon) NEON to \($e.wallets|n) wallet(s)" else empty end)
+        ' "$TMP/explore.json" 2>/dev/null
+        rule
+        title "ATOMS"
+    else
+        rm -f "$TMP/explore.json"
+        printf '%sno answer from %s%s (the electrode, or this network)\n' "$red" "$(url_host "$explore")" "$off"
+    fi
 }
 
 # ---- menu ----
@@ -275,6 +452,7 @@ menu() {
             post "Post now (what the electrode has waiting)" \
             log "Posting log" \
             update "Update tools (newest signed release)" \
+            monitor "The monitor (on the first screen, Alt+F1; back here: Alt+F2)" \
             fetch "Import settings and keys from the old posting machine (SSH)" \
             import "Import settings and keys from a USB stick" \
             wipe "Wipe the stick's copies" \
@@ -289,6 +467,7 @@ menu() {
                 whiptail --title "Posting" --scrolltext --textbox /tmp/vault-log 22 78 ;;
             log) journalctl -u neon-post -n 300 -o short-iso --no-pager > /tmp/vault-log 2>&1 || true; whiptail --title "Posting log" --scrolltext --textbox /tmp/vault-log 22 78 ;;
             update) clear; "$0" update > /tmp/vault-update 2>&1 || true; whiptail --title "Update" --scrolltext --textbox /tmp/vault-update 20 78 ;;
+            monitor) whiptail --msgbox "The monitor runs on the first screen all the time: Alt+F1 shows it, Alt+F2 comes back here. Nothing can be typed there." 10 60 ;;
             fetch) h=$(whiptail --inputbox "The old posting machine, as USER@HOST (its address on this network works too)" 9 72 3>&1 1>&2 2>&3) || continue
                 p=$(whiptail --inputbox "Its SSH port" 9 40 22 3>&1 1>&2 2>&3) || continue
                 clear; "$0" fetch "$h" "$p" || true; printf '\nEnter to go back to the menu. '; read -r _ ;;
@@ -317,6 +496,8 @@ case "${1:-menu}" in
     import) import "${2:-}" ;;
     wipe) wipe "${2:-}" ;;
     fetch) fetch "${2:-}" "${3:-}" ;;
+    monitor) monitor ;;
+    screens) screens ;;
     firewall) [ "$(id -u)" = 0 ] || die "as root"; firewall ;;
-    *) die "vault.sh menu | status | update | import DIR | wipe DIR | fetch USER@HOST [PORT]" ;;
+    *) die "vault.sh menu | status | update | import DIR | wipe DIR | fetch USER@HOST [PORT] | monitor | screens | firewall" ;;
 esac

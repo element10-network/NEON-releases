@@ -90,9 +90,28 @@ hotspot_on && hot_since=$(date +%s)
 # under the right one, else the panel shows a name that is not on the air.
 # (Read once; an empty answer, nmcli busy, is no reason to drop a phone.) Down first: the radio
 # cannot scan for the panel's list while it is the access point.
+# Open while a password is set now (setup.sh writes it after network.sh started the hotspot, review
+# 2026-11-18: it stayed open until the next step aside): opened again with the password.
+# Also when the password changed or was removed (review 2026-11-19); only when nmcli answered (an
+# empty answer is no reason to drop a phone) and the new password is one WPA2 takes (8 to 63
+# characters), or the hotspot would go down and not come back.
 if hotspot_on; then
     cur=$(nmcli -g 802-11-wireless.ssid connection show "$CON" 2>/dev/null)
-    if [ -n "$cur" ] && [ "$cur" != "$(ssid)" ]; then
+    open_now=no
+    pw_len=${#HOTSPOT_PASSWORD}
+    if [ -n "$cur" ] && sec=$(nmcli -g 802-11-wireless-security.key-mgmt connection show "$CON" 2>/dev/null); then
+        if [ -n "$HOTSPOT_PASSWORD" ] && [ "$pw_len" -ge 8 ] && [ "$pw_len" -le 63 ]; then
+            if [ "$sec" != wpa-psk ]; then
+                open_now=yes
+            elif psk=$(nmcli -s -g 802-11-wireless-security.psk connection show "$CON" 2>/dev/null) \
+                && [ -n "$psk" ] && [ "$psk" != "$HOTSPOT_PASSWORD" ]; then
+                open_now=yes
+            fi
+        elif [ -z "$HOTSPOT_PASSWORD" ] && [ "$sec" = wpa-psk ]; then
+            open_now=yes
+        fi
+    fi
+    if [ -n "$cur" ] && { [ "$cur" != "$(ssid)" ] || [ "$open_now" = yes ]; }; then
         nmcli connection down "$CON" >/dev/null 2>&1
         sleep 2
         start || offline_since=$(($(date +%s) + 480))

@@ -107,20 +107,24 @@ if [ -n "$WIFI_SSID" ] && command -v nmcli >/dev/null; then
     status "joining Wi-Fi $WIFI_SSID"
     rfkill unblock wifi 2>/dev/null || true
     n=0
+    joined=no
     while [ "$n" -lt 6 ]; do
         n=$((n + 1))
         nmcli device wifi rescan >/dev/null 2>&1
         sleep 5
         if [ -n "$WIFI_PASSWORD" ]; then
-            nmcli device wifi connect "$WIFI_SSID" password "$WIFI_PASSWORD" && break
+            nmcli device wifi connect "$WIFI_SSID" password "$WIFI_PASSWORD" && { joined=yes; break; }
         else
-            nmcli device wifi connect "$WIFI_SSID" && break
+            nmcli device wifi connect "$WIFI_SSID" && { joined=yes; break; }
         fi
     done
     # Joined: NetworkManager keeps the password (root only), so it leaves the card's open
     # partition now, whatever happens below. Not joined: it stays for the next boot's try.
-    # "100 (connected)" only: "30 (disconnected)" contains "connected" too.
-    if [ "$n" -lt 6 ] || nmcli -g GENERAL.STATE device show wlan0 2>/dev/null | grep -q '^100'; then
+    # "100 (connected)" only: "30 (disconnected)" contains "connected" too. (A flag, not the try
+    # count: the sixth try's join counted as a failure, review 2026-11-19; the Wi-Fi device by type,
+    # not wlan0.)
+    jdev=$(nmcli -t -f DEVICE,TYPE device 2>/dev/null | awk -F: '$2 == "wifi" { print $1; exit }')
+    if [ "$joined" = yes ] || { [ -n "$jdev" ] && nmcli -g GENERAL.STATE device show "$jdev" 2>/dev/null | grep -q '^100'; }; then
         sed -i 's/^\([[:space:]]*NEON_WIFI_PASSWORD[[:space:]]*=\).*/\1/' "$CONF"
     fi
 fi
