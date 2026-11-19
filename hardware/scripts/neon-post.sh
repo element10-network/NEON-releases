@@ -34,6 +34,17 @@
 #                                              (default: this directory, when it exists; this
 #                                              user must be able to write it: sudo chown -R ne: it)
 set -eu
+# After each run (neon-post.service's ExecStopPost): when it ended and how, kept on disk, so the
+# vault's Status and monitor show the last run after a restart too (systemd forgets it; owner
+# 2026-11-19). "<Unix seconds> <result> <exit status>", the result as systemd gives it (success,
+# exit-code, timeout...).
+if [ "${1:-}" = --record-run ]; then
+    f=/var/lib/neon-post/last-run
+    # (75: another run held the lock, this one did nothing: not a run of its own, review 2026-11-19.)
+    [ "${EXIT_STATUS:-}" = 75 ] && exit 0
+    printf '%s %s %s\n' "$(date +%s)" "${SERVICE_RESULT:-unknown}" "${EXIT_STATUS:-?}" > "$f.tmp" && mv -f "$f.tmp" "$f"
+    exit 0
+fi
 CONF=${NEON_POST_CONF:-/etc/neon/post.conf}
 [ -f "$CONF" ] || { echo "no settings: $CONF"; exit 1; }
 . "$CONF"
@@ -51,7 +62,7 @@ LOCAL_EPOCHS=${LOCAL_EPOCHS:-/var/lib/neon/reports/epochs}
 mkdir -p "$KEEP"
 # One run at a time (the timer and one started by hand would both post the same epoch).
 exec 9>"$KEEP/.lock"
-flock -n 9 || { echo "already running"; exit 0; }
+flock -n 9 || { echo "already running"; exit 75; }
 
 remote() {
     ssh -i "$SSH_KEY" -p "$PORT" -o BatchMode=yes -o ConnectTimeout=30 \

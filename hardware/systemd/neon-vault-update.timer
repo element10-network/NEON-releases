@@ -1,0 +1,10 @@
+[Unit]
+Description=NEON vault: automatic updates, daily at noon UTC (far from the posting run at 03:15)
+
+[Timer]
+OnCalendar=*-*-* 12:00:00 UTC
+Persistent=true
+RandomizedDelaySec=30min
+
+[Install]
+WantedBy=timers.target

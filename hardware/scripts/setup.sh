@@ -125,7 +125,7 @@ asset() {
 vle() { [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n 1)" = "$1" ]; }
 # An older release is never installed from here: making an old release the newest cannot bring back
 # its unchecked scripts or fixed bugs. Raised with each stable release (the one before it).
-MIN_RELEASE=0.11.3
+MIN_RELEASE=0.11.5
 # The scripts run as root: unless a branch or tag is given (or the private source is used), they
 # come from the newest release's tag and must match the tree hash its signed scripts.txt names.
 # Every failure stops the install (a download that fails is not "an older release").
@@ -183,6 +183,8 @@ if [ -n "$CHECK_SCRIPTS" ]; then
     # hash, and is not the release's).
     git -C "$REPO" clean -q -ffdx -- hardware
     # As the Release workflow hashes them: every file under hardware/, by name.
+    # Files and folders only: a link is outside the hash and could point anywhere (review 2026-11-19).
+    [ -z "$(cd "$REPO" && find hardware ! -type f ! -type d | head -n 1)" ] || die "the scripts at $REF hold a link: not installed"
     tree=$(cd "$REPO" && find hardware -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum | sha256sum | cut -d' ' -f1)
     [ "$tree" = "$CHECK_SCRIPTS" ] || die "the scripts at $REF do not match the release's signed scripts.txt: not installed"
     echo "scripts checked against $REF's signed scripts.txt"
@@ -273,6 +275,9 @@ download_release() {
     # only no release, no keys yet or no binary for this target falls back (return 1).
     [ -n "$keys" ] || { echo "no release keys yet"; return 1; }
     signed "$tmp/release.txt" "$tmp/release.sig" || { echo "release signature not valid"; return 2; }
+    # A release list, not another file the same key signs (tools.txt has version and file lines
+    # too: review 2026-11-19).
+    [ "$(head -n 1 "$tmp/release.txt")" = neon-release/1 ] || { echo "release.txt is not a release list"; return 2; }
     # The neond of the same release as the scripts checked above (not an older signed release.txt
     # put in its place).
     if [ -n "$VERSION" ] && [ "$(sed -n 's/^version //p' "$tmp/release.txt")" != "$VERSION" ]; then
@@ -281,7 +286,7 @@ download_release() {
     # Never older than MIN_RELEASE, whichever way the release was chosen (NEON_REF installs too:
     # an old signed release marked latest must not go on a fresh card).
     vle "$MIN_RELEASE" "$(sed -n 's/^version //p' "$tmp/release.txt")" || { echo "release older than $MIN_RELEASE: refused"; return 2; }
-    line=$(grep "^file $TARGET " "$tmp/release.txt") || { echo "no release binary for $TARGET"; return 1; }
+    line=$(grep "^file $TARGET neond-$TARGET " "$tmp/release.txt") || { echo "no release binary for $TARGET"; return 1; }
     name=$(echo "$line" | cut -d' ' -f3)
     size=$(echo "$line" | cut -d' ' -f4)
     sha=$(echo "$line" | cut -d' ' -f5)
