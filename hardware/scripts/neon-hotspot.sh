@@ -70,7 +70,13 @@ start() {
     SSID=$(ssid)
     set -- connection add type wifi ifname "$DEV" con-name "$CON" autoconnect no ssid "$SSID" \
         802-11-wireless.mode ap 802-11-wireless.band bg ipv4.method shared ipv6.method ignore
+    # A password WPA2 refuses (not 8 to 63 characters): not started, and said so plainly (never
+    # opened without one instead: review 2026-11-19). Every writer of hotspot.conf makes a valid one.
     if [ -n "$HOTSPOT_PASSWORD" ]; then
+        if [ ${#HOTSPOT_PASSWORD} -lt 8 ] || [ ${#HOTSPOT_PASSWORD} -gt 63 ]; then
+            echo "the setup hotspot's password in hotspot.conf is not 8 to 63 characters: not started"
+            return 1
+        fi
         set -- "$@" wifi-sec.key-mgmt wpa-psk wifi-sec.psk "$HOTSPOT_PASSWORD"
     fi
     if nmcli "$@" >/dev/null && nmcli connection up "$CON" >/dev/null; then
@@ -99,11 +105,14 @@ if hotspot_on; then
     cur=$(nmcli -g 802-11-wireless.ssid connection show "$CON" 2>/dev/null)
     open_now=no
     pw_len=${#HOTSPOT_PASSWORD}
-    if [ -n "$cur" ] && sec=$(nmcli -g 802-11-wireless-security.key-mgmt connection show "$CON" 2>/dev/null); then
+    # (An open hotspot has no security setting: an empty or failed answer then is "open", the
+    # name having been read.)
+    if [ -n "$cur" ]; then
+        sec=$(nmcli -g 802-11-wireless-security.key-mgmt connection show "$CON" 2>/dev/null || true)
         if [ -n "$HOTSPOT_PASSWORD" ] && [ "$pw_len" -ge 8 ] && [ "$pw_len" -le 63 ]; then
             if [ "$sec" != wpa-psk ]; then
                 open_now=yes
-            elif psk=$(nmcli -s -g 802-11-wireless-security.psk connection show "$CON" 2>/dev/null) \
+            elif psk=$(nmcli -e no -s -g 802-11-wireless-security.psk connection show "$CON" 2>/dev/null) \
                 && [ -n "$psk" ] && [ "$psk" != "$HOTSPOT_PASSWORD" ]; then
                 open_now=yes
             fi

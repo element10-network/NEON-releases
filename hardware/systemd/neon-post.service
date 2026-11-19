@@ -17,5 +17,7 @@ CacheDirectory=neon-post
 ProtectSystem=full
 ProtectHome=read-only
 ExecStart=/bin/sh /opt/neon-post/neon-post.sh
+# 75: another run was going (this one did nothing, and is not recorded as the last run).
+SuccessExitStatus=75
 # When it ended and how, kept in /var/lib/neon-post/last-run (systemd forgets it at a restart).
 ExecStopPost=/bin/sh /opt/neon-post/neon-post.sh --record-run

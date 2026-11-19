@@ -124,7 +124,9 @@ if [ -n "$WIFI_SSID" ] && command -v nmcli >/dev/null; then
     # count: the sixth try's join counted as a failure, review 2026-11-19; the Wi-Fi device by type,
     # not wlan0.)
     jdev=$(nmcli -t -f DEVICE,TYPE device 2>/dev/null | awk -F: '$2 == "wifi" { print $1; exit }')
-    if [ "$joined" = yes ] || { [ -n "$jdev" ] && nmcli -g GENERAL.STATE device show "$jdev" 2>/dev/null | grep -q '^100'; }; then
+    # (Connected to that network, not another one Imager set up: review 2026-11-19.)
+    if [ "$joined" = yes ] || { [ -n "$jdev" ] && nmcli -g GENERAL.STATE device show "$jdev" 2>/dev/null | grep -q '^100' \
+        && [ "$(nmcli -e no -g GENERAL.CONNECTION device show "$jdev" 2>/dev/null)" = "$WIFI_SSID" ]; }; then
         sed -i 's/^\([[:space:]]*NEON_WIFI_PASSWORD[[:space:]]*=\).*/\1/' "$CONF"
     fi
 fi

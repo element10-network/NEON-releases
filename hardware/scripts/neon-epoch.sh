@@ -216,8 +216,16 @@ else
     # file written now would wait for an epoch already on chain. Asked again; an existing pending
     # file stays (the poster's `done` files it once it has posted).
     now_next=$(tok next-epoch 2>/dev/null || echo "$N")
-    if [ "$now_next" != "$N" ] && [ ! -f "$old" ]; then
-        echo "epoch $N was posted while it was computed (the chain now waits for epoch $now_next): nothing left pending"
+    case "$now_next" in "" | *[!0-9]*) now_next=$N ;; esac
+    # (Also when one is pending: the poster posted it and files it with the hash it fetched, so
+    # it must not be replaced now, review 2026-11-19.)
+    if [ "$now_next" != "$N" ]; then
+        echo "epoch $N was posted while it was computed (the chain now waits for epoch $now_next): the pending file left as it is"
+        exit 0
+    fi
+    # Nor one already on chain (posted between the question above and here).
+    if [ -f "$old" ] && tok check "$old" 2>/dev/null | grep -q "the file is the one on chain"; then
+        echo "epoch $N: the pending file is the one on chain (posted): left as it is"
         exit 0
     fi
     # The whole result, not only the root: the poster compares all of it (what the root does not
