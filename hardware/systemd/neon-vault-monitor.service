@@ -1,0 +1,22 @@
+[Unit]
+Description=NEON vault: the monitor on the first screen (vault.sh monitor)
+After=network-online.target systemd-user-sessions.service
+Wants=network-online.target
+Conflicts=getty@tty1.service
+
+[Service]
+# Read-only: the vault's status and the electrode's public explorer data, every minute. As root
+# (Status reads the firewall and the admin key's address); nothing on that screen takes input.
+ExecStart=/bin/sh /opt/neon-vault/vault.sh monitor
+StandardInput=tty
+StandardOutput=tty
+StandardError=journal
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+Environment=TERM=linux
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

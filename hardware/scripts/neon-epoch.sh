@@ -150,6 +150,7 @@ fi
 # Every entry N:<wallet>:<amount> (a malformed one is refused, not skipped: it would be lost with
 # its epoch), the amount above 0 without leading zeros, one per wallet and epoch.
 cb="" wallets=" "
+# (The same checks as neon-post.sh's: change both together; eu1 and hq must refuse the same entries.)
 for x in ${CLAWBACK:-}; do
     case "$x" in
         *[!0-9A-Za-z:]* | *:*:*:* | :* | *: | *::*) echo "CLAWBACK in $CONF: $x is not N:<wallet>:<amount>"; exit 1 ;;
@@ -211,6 +212,14 @@ if [ "$POST" = 1 ]; then
 else
     mkdir -p "$EPOCHS/pending"
     old="$EPOCHS/pending/epoch-$N.json"
+    # The poster may have posted epoch N while this one computed (review 2026-11-19): a pending
+    # file written now would wait for an epoch already on chain. Asked again; an existing pending
+    # file stays (the poster's `done` files it once it has posted).
+    now_next=$(tok next-epoch 2>/dev/null || echo "$N")
+    if [ "$now_next" != "$N" ] && [ ! -f "$old" ]; then
+        echo "epoch $N was posted while it was computed (the chain now waits for epoch $now_next): nothing left pending"
+        exit 0
+    fi
     # The whole result, not only the root: the poster compares all of it (what the root does not
     # cover, such as the hubs and the inputs, is carried to the next epoch). Replaced by a rename,
     # never written in place (the poster may be fetching it).
