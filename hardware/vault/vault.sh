@@ -1,15 +1,17 @@
 #!/bin/sh
-# The key box (owner 2026-11-15): a Raspberry Pi at home that holds the NEON admin key and posts each
-# epoch's root, and does nothing else. Nothing listens on it (no SSH, no web server: keybox-setup.sh
+# The vault (owner 2026-11-15): a Raspberry Pi at home that holds the NEON admin key and posts each
+# epoch's root, and does nothing else. Nothing listens on it (no SSH, no web server: vault-setup.sh
 # removes the SSH server and drops every incoming connection); it only connects out, to the electrode
 # (neon-post.sh fetches the pending epoch over SSH) and to the Solana RPC, and is run from its own
 # screen and keyboard with this menu.
 #
-#   keybox.sh menu           the console menu (started on tty1 after logging in)
-#   keybox.sh status         what it is doing, as text
-#   keybox.sh update         install the newest signed release's neon-oracle, neon-token and scripts
-#   keybox.sh import DIR     take post.conf, the admin key and the SSH key from DIR (a USB stick)
-#   keybox.sh wipe DIR       erase those files from DIR once imported
+#   vault.sh menu           the console menu (started on tty1 after logging in)
+#   vault.sh status         what it is doing, as text
+#   vault.sh update         install the newest signed release's neon-oracle, neon-token and scripts
+#   vault.sh import DIR     take post.conf, the admin key and the SSH key from DIR (a USB stick)
+#   vault.sh wipe DIR       erase those files from DIR once imported
+#   vault.sh fetch USER@HOST [PORT]   import straight from the old posting machine over SSH (into
+#                            memory only, then imported and wiped: no stick, nothing typed but the login)
 #
 # Updates come from the public element10-network/NEON-releases: tools.txt and scripts.txt, each
 # checked against a release key built into this script (as into neond and setup.sh; a test keeps
@@ -17,7 +19,7 @@
 set -eu
 
 GH_REPO=element10-network/NEON-releases
-HOME_DIR=/opt/neon-keybox
+HOME_DIR=/opt/neon-vault
 POST_DIR=/opt/neon-post
 STATE=/var/lib/neon-post
 CONF=/etc/neon/post.conf
@@ -64,7 +66,7 @@ update() {
         curl -fsSL --retry 3 -o "$2" "$url"
     }
     for f in tools scripts; do
-        asset "$f.txt" "$TMP/$f.txt" || die "release $version has no $f.txt (released before the key box)"
+        asset "$f.txt" "$TMP/$f.txt" || die "release $version has no $f.txt (released before the vault)"
         asset "$f.sig" "$TMP/$f.sig" || die "release $version has no $f.sig"
         signed "$TMP/$f.txt" "$TMP/$f.sig" || die "$f.txt is not signed by a release key: nothing installed"
         [ "$(sed -n 's/^version //p' "$TMP/$f.txt")" = "$version" ] || die "$f.txt is for another version"
@@ -95,17 +97,17 @@ update() {
     mkdir -p "$POST_DIR" "$HOME_DIR"
     install -m 755 "$TMP/src/hardware/scripts/neon-post.sh" "$POST_DIR/neon-post.sh"
     install -m 644 "$TMP/src/hardware/systemd/neon-post.service" "$TMP/src/hardware/systemd/neon-post.timer" /etc/systemd/system/
-    install -m 755 "$TMP/src/hardware/keybox/keybox.sh" "$HOME_DIR/keybox.sh"
+    install -m 755 "$TMP/src/hardware/vault/vault.sh" "$HOME_DIR/vault.sh"
     systemctl daemon-reload
     echo "$version" > "$HOME_DIR/version"
     # The NEON-token commit, only for a neon-token installed now (one kept keeps its own).
     [ -f "$TMP/neon-token" ] && sed -n 's/^token-commit //p' "$TMP/tools.txt" > "$HOME_DIR/token-commit"
-    echo "installed release $version (neon-oracle, neon-token, neon-post.sh, the key box's menu)"
+    echo "installed release $version (neon-oracle, neon-token, neon-post.sh, the vault's menu)"
 }
 
 # ---- import: settings and keys from a USB stick, made on the old posting machine ----
 # The stick's folder holds post.conf, admin.json (the admin keypair), ssh/ (id_ed25519 and
-# known_hosts) and epochs/ (the kept epochs): see docs/HUB.md "The key box".
+# known_hosts) and epochs/ (the kept epochs): see docs/HUB.md "The vault".
 import() {
     d=${1:?import DIR}
     [ "$(id -u)" = 0 ] || { as_root "$0" import "$d"; return; }
@@ -144,7 +146,7 @@ wipe() {
     rm -rf "$d/epochs"
     rmdir "$d/ssh" "$d" 2>/dev/null || true
     sync
-    echo "erased from $d (on a flash stick shred cannot reach every copy: keep the stick with the key box, or destroy it)"
+    echo "erased from $d (on a flash stick shred cannot reach every copy: keep the stick with the vault, or destroy it)"
 }
 
 # ---- firewall: nothing in; out only DNS, DHCP, time, HTTP(S) and the electrode's SSH port ----
@@ -158,9 +160,9 @@ firewall() {
     done
     cat > /etc/nftables.conf <<EOF
 #!/usr/sbin/nft -f
-# The key box (keybox.sh): nothing comes in; out only what posting needs.
+# The vault (vault.sh): nothing comes in; out only what posting needs.
 flush ruleset
-table inet keybox {
+table inet vault {
     chain input {
         type filter hook input priority 0; policy drop;
         iif lo accept
@@ -198,7 +200,7 @@ status() {
     open=$(ss -Htuln 2>/dev/null | awk '{print $5}' | grep -v -E '^(127\.|\[::1\]|.*%lo:)' | grep -v -E ':(68|546)$' | wc -l)
     echo "Listening    $open port(s) open to the network$( [ "$open" = 0 ] && echo ' (as it should be)')"
     # (nft prints the priority by name, "filter", and needs root to list.)
-    if as_root nft list chain inet keybox input 2>/dev/null | grep -q 'hook input .* policy drop'; then echo "Firewall     incoming dropped"; else echo "Firewall     NOT ON (Set up again)"; fi
+    if as_root nft list chain inet vault input 2>/dev/null | grep -q 'hook input .* policy drop'; then echo "Firewall     incoming dropped"; else echo "Firewall     NOT ON (Set up again)"; fi
     if [ ! -s "$CONF" ]; then echo "Settings     none yet (Import from a USB stick)"; return 0; fi
     url=$(conf URL); remote=$(conf REMOTE); port=$(conf PORT)
     echo "Network      ${url:-devnet}, electrode ${remote:-?} (port ${port:-22})"
@@ -228,51 +230,80 @@ print("1"*(len(b)-len(b.lstrip(b"\0")))+s)')
     fi
 }
 
-# The stick's neon-keybox folder: mounted at /mnt/stick (Raspberry Pi OS Lite mounts nothing itself).
+# The stick's neon-vault folder: mounted at /mnt/stick (Raspberry Pi OS Lite mounts nothing itself).
 stick() {
-    for d in /mnt/stick/neon-keybox /media/*/*/neon-keybox /media/*/neon-keybox; do [ -d "$d" ] && { echo "$d"; return; }; done
+    for d in /mnt/stick/neon-vault /media/*/*/neon-vault /media/*/neon-vault; do [ -d "$d" ] && { echo "$d"; return; }; done
     dev=$(ls /dev/sd[a-z][0-9] 2>/dev/null | head -n 1)
     [ -n "$dev" ] || return 0
     as_root mkdir -p /mnt/stick && as_root mount -o uid="$(id -u "$USER_NAME")",gid="$(id -g "$USER_NAME")" "$dev" /mnt/stick 2>/dev/null ||
         as_root mount "$dev" /mnt/stick 2>/dev/null || return 0
-    [ -d /mnt/stick/neon-keybox ] && echo /mnt/stick/neon-keybox
+    [ -d /mnt/stick/neon-vault ] && echo /mnt/stick/neon-vault
+}
+
+# ---- fetch: settings and keys straight from the old posting machine, over SSH ----
+# As the posting user (it types the old machine's password or uses its own key). What comes over is
+# kept in memory only (/dev/shm), imported and wiped at once; the SSH port is opened for this alone
+# (the import writes the firewall again, without it, and so does a failure here).
+fetch() {
+    from=${1:-}
+    port=${2:-22}
+    case "$from" in *@*) ;; *) die "fetch USER@HOST [PORT]" ;; esac
+    case "$from" in -* | *[!A-Za-z0-9@._-]*) die "not USER@HOST: $from" ;; esac
+    case "$port" in "" | *[!0-9]*) die "not a port: $port" ;; esac
+    [ "$(id -u)" != 0 ] || die "as the posting user ($USER_NAME), not root: it logs in to $from"
+    dir=$(mktemp -d /dev/shm/neon-vault-fetch.XXXXXX)
+    # Whatever happens: the copy wiped from memory, the firewall as the settings say.
+    trap 'as_root "$0" wipe "$dir/neon-vault" >/dev/null 2>&1 || true; rm -rf "$dir" "$TMP"; as_root "$0" firewall >/dev/null 2>&1 || true' EXIT
+    as_root nft add rule inet vault output tcp dport "$port" accept 2>/dev/null || true
+    echo "Logging in to $from (port $port): accept its host key if asked, then its password."
+    ssh -p "$port" "$from" 'set -e; . /etc/neon/post.conf; T=$(mktemp -d); trap "rm -rf $T" EXIT; D=$T/neon-vault; mkdir -p "$D/ssh" "$D/epochs"; cp /etc/neon/post.conf "$D/"; cp "$KEYPAIR" "$D/admin.json"; cp "$SSH_KEY" "$D/ssh/id_ed25519"; cp /var/lib/neon-post/ssh/known_hosts "$D/ssh/"; for f in /var/lib/neon-post/epochs/epoch-*.json /var/lib/neon-post/epochs/epoch-*.json.from-electrode; do [ ! -f "$f" ] || cp "$f" "$D/epochs/"; done; tar -C "$T" -czf - neon-vault' |
+        tar -C "$dir" -xzf - || die "nothing copied from $from (see the messages above)"
+    echo "Copied:"
+    (cd "$dir/neon-vault" && find . -type f | sort)
+    as_root "$0" import "$dir/neon-vault"
+    as_root "$0" wipe "$dir/neon-vault"
+    echo "Done: imported, the copy wiped from memory. Next: Status, then turn the old machine's posting timer off and this one's on."
 }
 
 # ---- menu ----
 menu() {
-    command -v whiptail >/dev/null || die "whiptail missing (keybox-setup.sh installs it)"
+    command -v whiptail >/dev/null || die "whiptail missing (vault-setup.sh installs it)"
     while :; do
-        c=$(whiptail --title "NEON key box" --notags --cancel-button "Shell" --menu \
+        c=$(whiptail --title "NEON vault" --notags --cancel-button "Shell" --menu \
             "$(hostname) · $(date -u '+%Y-%m-%d %H:%M UTC') · release $(cat "$HOME_DIR/version" 2>/dev/null || echo none)" 20 72 10 \
             status "Status" \
             post "Post now (what the electrode has waiting)" \
             log "Posting log" \
             update "Update tools (newest signed release)" \
+            fetch "Import settings and keys from the old posting machine (SSH)" \
             import "Import settings and keys from a USB stick" \
             wipe "Wipe the stick's copies" \
             eject "Unmount the stick" \
             timer "Posting timer on / off" \
             edit "Edit settings (post.conf)" \
             reboot "Restart" \
-            off "Shut down" 3>&1 1>&2 2>&3) || { clear; echo "/opt/neon-keybox/keybox.sh menu brings the menu back."; KEYBOX_SHELL=1 exec "${SHELL:-/bin/bash}" -l; }
+            off "Shut down" 3>&1 1>&2 2>&3) || { clear; echo "/opt/neon-vault/vault.sh menu brings the menu back."; VAULT_SHELL=1 exec "${SHELL:-/bin/bash}" -l; }
         case "$c" in
-            status) status > /tmp/keybox-status 2>&1 || true; whiptail --title "Status" --scrolltext --textbox /tmp/keybox-status 22 78 ;;
-            post) clear; as_root systemctl start neon-post.service || true; journalctl -u neon-post -n 30 -o cat --no-pager > /tmp/keybox-log 2>&1 || true
-                whiptail --title "Posting" --scrolltext --textbox /tmp/keybox-log 22 78 ;;
-            log) journalctl -u neon-post -n 300 -o short-iso --no-pager > /tmp/keybox-log 2>&1 || true; whiptail --title "Posting log" --scrolltext --textbox /tmp/keybox-log 22 78 ;;
-            update) clear; "$0" update > /tmp/keybox-update 2>&1 || true; whiptail --title "Update" --scrolltext --textbox /tmp/keybox-update 20 78 ;;
-            import|wipe) d=$(whiptail --inputbox "The stick's neon-keybox folder (plug the stick in first)" 9 72 "$(stick)" 3>&1 1>&2 2>&3) || continue
-                clear; "$0" "$c" "$d" > /tmp/keybox-out 2>&1 || true; whiptail --title "$c" --scrolltext --textbox /tmp/keybox-out 16 78 ;;
+            status) status > /tmp/vault-status 2>&1 || true; whiptail --title "Status" --scrolltext --textbox /tmp/vault-status 22 78 ;;
+            post) clear; as_root systemctl start neon-post.service || true; journalctl -u neon-post -n 30 -o cat --no-pager > /tmp/vault-log 2>&1 || true
+                whiptail --title "Posting" --scrolltext --textbox /tmp/vault-log 22 78 ;;
+            log) journalctl -u neon-post -n 300 -o short-iso --no-pager > /tmp/vault-log 2>&1 || true; whiptail --title "Posting log" --scrolltext --textbox /tmp/vault-log 22 78 ;;
+            update) clear; "$0" update > /tmp/vault-update 2>&1 || true; whiptail --title "Update" --scrolltext --textbox /tmp/vault-update 20 78 ;;
+            fetch) h=$(whiptail --inputbox "The old posting machine, as USER@HOST (its address on this network works too)" 9 72 3>&1 1>&2 2>&3) || continue
+                p=$(whiptail --inputbox "Its SSH port" 9 40 22 3>&1 1>&2 2>&3) || continue
+                clear; "$0" fetch "$h" "$p" || true; printf '\nEnter to go back to the menu. '; read -r _ ;;
+            import|wipe) d=$(whiptail --inputbox "The stick's neon-vault folder (plug the stick in first)" 9 72 "$(stick)" 3>&1 1>&2 2>&3) || continue
+                clear; "$0" "$c" "$d" > /tmp/vault-out 2>&1 || true; whiptail --title "$c" --scrolltext --textbox /tmp/vault-out 16 78 ;;
             timer) if systemctl is-enabled -q neon-post.timer 2>/dev/null; then
                     whiptail --yesno "Turn the posting timer off? Nothing is posted until it is on again." 9 70 && as_root systemctl disable --now neon-post.timer || true
                 else
                     whiptail --yesno "Turn the posting timer on (daily 03:15 UTC)? First make sure the old posting machine's timer is off: two posters must never run." 10 72 && as_root systemctl enable --now neon-post.timer || true
                 fi ;;
             # A port changed in the settings is opened at once.
-            edit) as_root nano "$CONF" || true; as_root "$0" firewall > /tmp/keybox-out 2>&1 || whiptail --title "Firewall" --scrolltext --textbox /tmp/keybox-out 16 78 ;;
+            edit) as_root nano "$CONF" || true; as_root "$0" firewall > /tmp/vault-out 2>&1 || whiptail --title "Firewall" --scrolltext --textbox /tmp/vault-out 16 78 ;;
             eject) sync; as_root umount /mnt/stick 2>/dev/null || true; whiptail --msgbox "The stick can be taken out." 7 40 ;;
-            reboot) whiptail --yesno "Restart the key box?" 8 40 && as_root systemctl reboot || true ;;
-            off) whiptail --yesno "Shut the key box down? Nothing is posted while it is off." 8 64 && as_root systemctl poweroff || true ;;
+            reboot) whiptail --yesno "Restart the vault?" 8 40 && as_root systemctl reboot || true ;;
+            off) whiptail --yesno "Shut the vault down? Nothing is posted while it is off." 8 64 && as_root systemctl poweroff || true ;;
         esac
     done
 }
@@ -285,6 +316,7 @@ case "${1:-menu}" in
     update) update ;;
     import) import "${2:-}" ;;
     wipe) wipe "${2:-}" ;;
+    fetch) fetch "${2:-}" "${3:-}" ;;
     firewall) [ "$(id -u)" = 0 ] || die "as root"; firewall ;;
-    *) die "keybox.sh menu | status | update | import DIR | wipe DIR" ;;
+    *) die "vault.sh menu | status | update | import DIR | wipe DIR | fetch USER@HOST [PORT]" ;;
 esac
