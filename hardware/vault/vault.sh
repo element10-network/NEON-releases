@@ -385,6 +385,18 @@ EOF2
 # electrode's public explorer data (the same as its /explore page: nothing private). Run by
 # neon-vault-monitor.service on tty1; nothing on it can be typed into.
 MONITOR_EVERY=60
+LOGO1='╭╮╭╮╭╮╭╮'
+LOGO2='│││╯││││'
+LOGO3='││╰ ╰╯││'
+# The rounded corners only when the console's font has them (setfont's map of it lists U+256D);
+# otherwise the square ones every console font has (owner 2026-11-23: no boxes or diamonds).
+logo_for_console() {
+    map=$(mktemp)
+    if setfont -ou "$map" 2>/dev/null && grep -qi 'U+256d' "$map"; then :; else
+        LOGO1='┌┐┌┐┌┐┌┐'; LOGO2='│││┘││││'; LOGO3='││└ └┘││'
+    fi
+    rm -f "$map"
+}
 monitor() {
     [ "$(id -u)" = 0 ] || die "as root (neon-vault-monitor.service runs it)"
     bold=$(tput bold 2>/dev/null || true); dim=$(tput dim 2>/dev/null || true)
@@ -397,38 +409,109 @@ monitor() {
     # other mode is then only part of a character, review 2026-11-19.)
     printf '\033%%G\033[?25l'; setterm --blank 0 --powerdown 0 2>/dev/null || true
     stty -isig -ixon -icanon -echo 2>/dev/null || true
+    logo_for_console
     while :; do
-        monitor_screen > "$TMP/screen" 2>&1 || true
-        cols=$(tput cols 2>/dev/null || echo 80); rows=$(tput lines 2>/dev/null || echo 25)
+        full=$(tput cols 2>/dev/null || echo 80); rows=$(tput lines 2>/dev/null || echo 25)
+        # A wide screen in two columns (owner 2026-11-23): the vault and the network on the left, the
+        # world scanner on the right; a narrow one, the left alone.
+        if [ "$full" -ge 120 ]; then
+            right=$((full * 2 / 5)); left=$((full - right - 3))
+        else
+            right=0; left=$full
+        fi
+        MON_COLS=$left monitor_screen > "$TMP/screen" 2>&1 || true
+        [ "$right" -eq 0 ] || scan_column "$right" "$rows" > "$TMP/scan-col" 2>&1 || true
         printf '\033[H\033[2J'
-        # Each line cut to the screen's width (colours not counted), no more lines than it has:
-        # a long line would wrap and scroll the top away.
-        fit "$cols" < "$TMP/screen" | head -n "$rows"
+        # Each line cut to its column's width (colours not counted), no more lines than the screen
+        # has: a long line would wrap and scroll the top away.
+        if [ "$right" -eq 0 ]; then
+            fit "$left" < "$TMP/screen" | head -n "$rows"
+        else
+            awk -v n="$rows" '{ print } END { for (i = NR; i < n; i++) print "" }' "$TMP/screen" | head -n "$rows" | fit "$left" pad > "$TMP/left"
+            fit "$right" < "$TMP/scan-col" | head -n "$rows" > "$TMP/right"
+            # (Joined at a control character no text on either side has: they are taken out.)
+            paste -d "$(printf '\001')" "$TMP/left" "$TMP/right" | head -n "$rows" | sed "s/$(printf '\001')/ $dim│$off /"
+        fi
         sleep "$MONITOR_EVERY"
     done
 }
 
 # fit COLS: each line cut to COLS characters, escape sequences (the colours) not counted.
+# fit COLS [pad]: each line cut to COLS characters (and with pad, filled with spaces up to them), escape
+# sequences (the colours) not counted, a UTF-8 character counted once (the logo, names: owner
+# 2026-11-23, the screen in two columns lines them up).
 fit() {
-    awk -v w="$1" -v off="$off" '{
-        s = $0; out = ""; n = 0; esc = 0
+    awk -v w="$1" -v pad="${2:-}" -v off="$off" '
+    BEGIN { for (i = 128; i < 192; i++) cont = cont sprintf("%c", i) }
+    {
+        s = $0; out = ""; n = 0; esc = 0; keep = 1
         while (s != "") {
-            if (substr(s, 1, 1) == "\033") {
+            c = substr(s, 1, 1)
+            if (c == "\033") {
                 if (match(s, /^\033\[[0-9;?]*[A-Za-z]/) || match(s, /^\033[()][A-Za-z0-9]/)) {
                     out = out substr(s, 1, RLENGTH); s = substr(s, RLENGTH + 1); esc = 1; continue
                 }
                 s = substr(s, 2); continue
             }
-            if (n < w) out = out substr(s, 1, 1)
+            # (A UTF-8 continuation byte goes with the character before it.)
+            if (index(cont, c)) { if (keep) out = out c; s = substr(s, 2); continue }
+            keep = (n < w)
+            if (keep) out = out c
             n++; s = substr(s, 2)
         }
-        print out (esc ? off : "")
+        out = out (esc ? off : "")
+        if (pad != "") while (n < w) { out = out " "; n++ }
+        print out
     }'
+}
+
+# The world scanner's newest packets (eu1's, through the SSH key: neon-epoch-remote.sh `scan`), asked
+# every two minutes, as the right column of the screen (owner 2026-11-23): time, network, sender,
+# kind, text, and how many atoms heard it.
+SCAN_EVERY_MIN=2
+scan_column() {
+    w=$1; rows=$2
+    remote=$(conf REMOTE); port=$(conf PORT)
+    if [ -n "$remote" ] && { [ ! -s "$TMP/scan.json" ] || [ -z "$(find "$TMP/scan.json" -mmin -"$SCAN_EVERY_MIN" 2>/dev/null)" ]; }; then
+        if as_user ssh -i "$STATE/ssh/id_ed25519" -p "${port:-22}" -o BatchMode=yes -o ConnectTimeout=15 \
+            -o UserKnownHostsFile="$STATE/ssh/known_hosts" "$remote" scan 2>/dev/null | head -c 2000000 > "$TMP/scan.new" \
+            && jq -e '.items | arrays' "$TMP/scan.new" >/dev/null 2>&1; then
+            mv -f "$TMP/scan.new" "$TMP/scan.json"
+        else
+            rm -f "$TMP/scan.new"
+            # (Kept: the last answer, until a newer one; marked old by its time.)
+            touch "$TMP/scan.json"
+        fi
+    fi
+    rule() { printf '%s%s%s\n' "$dim" "$(printf '%*s' "$w" '' | tr ' ' '-')" "$off"; }
+    printf '%sWORLD SCANNER%s\n' "$bold$cyan" "$off"
+    if ! jq -e '.items | length > 0' "$TMP/scan.json" >/dev/null 2>&1; then
+        rule
+        printf '%snothing yet%s (the electrode answers once it runs this release)\n' "$dim" "$off"
+        return 0
+    fi
+    jq -r --arg d "$dim" --arg o "$off" --argjson now "$(date +%s)000" '
+        def num: if type == "number" then . else (tostring | tonumber? // 0) end;
+        "\($d)\(.items | length) packets, newest \((([$now - (.items[0].t | num), 0] | max) / 60000 | floor) as $m | if $m < 60 then "\($m)m" else "\($m / 60 | floor)h" end) ago, from the electrode\($o)"
+    ' "$TMP/scan.json" 2>/dev/null
+    rule
+    # The newest first; the text from elsewhere without control characters (as the atoms list).
+    jq -r --arg mt "$cyan" --arg mc "$yellow" --arg d "$dim" --arg o "$off" '
+        def clean: if . == null then "" else tostring | gsub("\\p{Cc}"; "") end;
+        def num: if type == "number" then . else (tostring | tonumber? // 0) end;
+        def pad($n): .[0:$n] | . + (" " * ($n - length));
+        .items[]? | objects |
+        ((.t | num) / 1000 | floor | localtime | strftime("%H:%M")) as $hm |
+        (if (.net | clean) == "meshcore" then $mc + "MC" else $mt + "MT" end) as $net |
+        ((.name | clean) as $n | if $n == "" then (.from | clean) else $n end) as $who |
+        ({"text": "text", "position": "pos", "nodeinfo": "node", "telemetry": "tele", "advert": "advert"}[(.kind | clean)] // (.kind | clean)) as $k |
+        "\($hm) \($net)\($o) \($who | pad(14)) \($d)\($k | pad(6))\($o) \((.text | clean)[0:200])\(if (.heard | num) > 1 then " \($d)x\(.heard | num)\($o)" else "" end)"
+    ' "$TMP/scan.json" 2>/dev/null | head -n $((rows - 3))
 }
 
 # One screen of the monitor (as text with colours): the fixed part, then as many atoms as fit.
 monitor_screen() {
-    cols=$(tput cols 2>/dev/null || echo 80); rows=$(tput lines 2>/dev/null || echo 25)
+    cols=${MON_COLS:-$(tput cols 2>/dev/null || echo 80)}; rows=$(tput lines 2>/dev/null || echo 25)
     monitor_top > "$TMP/top" 2>&1 || true
     cat "$TMP/top"
     [ -s "$TMP/explore.json" ] || return 0
@@ -448,7 +531,11 @@ monitor_screen() {
 monitor_top() {
     rule() { printf '%s%s%s\n' "$dim" "$(printf '%*s' "$cols" '' | tr ' ' '-')" "$off"; }
     title() { printf '%s%s%s\n' "$bold$cyan" "$1" "$off"; }
-    printf '%sNEON vault%s  %s   %s UTC   %s local\n' "$bold" "$off" "$(hostname)" "$(date -u '+%Y-%m-%d %H:%M')" "$(date '+%H:%M %Z')"
+    # The logo (owner 2026-11-23), box-drawing bars so the n's meet their arches, with the name and
+    # the time beside it.
+    printf '%s%s%s   %svault%s  %s\n' "$bold$cyan" "$LOGO1" "$off" "$bold" "$off" "$(hostname)"
+    printf '%s%s%s   %s UTC\n' "$bold$cyan" "$LOGO2" "$off" "$(date -u '+%Y-%m-%d %H:%M')"
+    printf '%s%s%s   %s local\n' "$bold$cyan" "$LOGO3" "$off" "$(date '+%Y-%m-%d %H:%M %Z')"
     rule
     title "VAULT"
     # Status's own lines, a word coloured where it matters (the admin key's address left out).
