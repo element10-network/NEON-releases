@@ -119,6 +119,16 @@ for n in $waiting; do
     case "$next" in "" | *[!0-9]*) echo "next-epoch gave '$next', not a number: nothing done" >&2; exit 1 ;; esac
     if [ "$n" -lt "$next" ]; then
         echo "epoch $n is on chain already: filing it"
+        # Posted from here and kept, but its "done" never reached the electrode (a dropped SSH),
+        # which may have computed the epoch again since: this machine's own file, if its root is
+        # the one on chain, is filed by its hash (the electrode keeps a replaced copy for that);
+        # else the electrode's (review 2026-11-23: its newer file failed the check every day and
+        # both machines stayed stuck).
+        if [ -s "$KEEP/epoch-$n.json" ] && tok check "$KEEP/epoch-$n.json" >/dev/null 2>&1 \
+            && remote done "$n" "$(jq -S -c . "$KEEP/epoch-$n.json" | sha256sum | cut -c1-64)"; then
+            file_local "$n"
+            continue
+        fi
         # The electrode's copy, not one kept here: posted by hand, or kept from a run whose post
         # failed before the electrode computed it again, this one may be missing or another.
         remote get "$n" > "$KEEP/epoch-$n.json.part"
