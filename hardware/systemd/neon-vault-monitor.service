@@ -1,12 +1,12 @@
 [Unit]
 Description=NEON vault: the monitor on the first screen (vault.sh monitor)
-After=network-online.target systemd-user-sessions.service
-Wants=network-online.target
+After=systemd-user-sessions.service
 Conflicts=getty@tty1.service
 
 [Service]
-# Read-only: the vault's status and the electrode's public explorer data, every minute. As root
-# (Status reads the firewall and the admin key's address); nothing on that screen takes input.
+# Read-only: the vault's status and the electrode's public explorer data every minute, the world
+# scanner's newest packets every two (through the SSH key), the clock every second. As root (Status
+# reads the firewall and the admin key's address); nothing on that screen takes input.
 ExecStart=/bin/sh /opt/neon-vault/vault.sh monitor
 StandardInput=tty
 StandardOutput=tty

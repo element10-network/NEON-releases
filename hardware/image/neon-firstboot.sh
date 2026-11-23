@@ -169,9 +169,20 @@ if [ -n "$SSH_USER" ]; then
         chown "$SSH_USER:$SSH_USER" "$home/.ssh/authorized_keys"; chmod 600 "$home/.ssh/authorized_keys"
     fi
     # With a key only there is no password for sudo: it asks for none (like the image's old pi user).
+    # Written aside and checked by visudo first (a broken sudoers file stops sudo for everyone); with
+    # a password since (NEON_SSH_HASH added before a restart), the rule goes again (review 2026-11-23).
+    rule="/etc/sudoers.d/010-neon-$SSH_USER"
     if [ -z "$HAS_PASSWORD" ]; then
-        printf '%s ALL=(ALL) NOPASSWD: ALL\n' "$SSH_USER" > "/etc/sudoers.d/010-neon-$SSH_USER"
-        chmod 440 "/etc/sudoers.d/010-neon-$SSH_USER"
+        printf '%s ALL=(ALL) NOPASSWD: ALL\n' "$SSH_USER" > "/etc/sudoers.d/.010-neon-$SSH_USER.tmp"
+        chmod 440 "/etc/sudoers.d/.010-neon-$SSH_USER.tmp"
+        if ! command -v visudo >/dev/null || visudo -cf "/etc/sudoers.d/.010-neon-$SSH_USER.tmp" >/dev/null; then
+            mv -f "/etc/sudoers.d/.010-neon-$SSH_USER.tmp" "$rule"
+        else
+            rm -f "/etc/sudoers.d/.010-neon-$SSH_USER.tmp"
+            echo "the sudo rule for $SSH_USER was refused by visudo: not written"
+        fi
+    else
+        rm -f "$rule"
     fi
     systemctl enable --now ssh 2>/dev/null || systemctl enable --now sshd 2>/dev/null || true
     echo "SSH on for $SSH_USER"

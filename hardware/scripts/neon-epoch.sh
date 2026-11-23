@@ -97,6 +97,16 @@ if [ "$N" -gt 0 ]; then
         echo "epoch $((N - 1)) was posted after all: published from pending"
     fi
     [ -f "$PREV" ] || { echo "epoch $((N - 1))'s result is missing: $PREV"; exit 1; }
+    # The filed previous result must be the root on chain (review 2026-11-23: epoch N-1 cancelled and
+    # posted again left the old file here, and every epoch after it was computed on it and refused by
+    # the poster). Only on the chain's word; an RPC that does not answer is not taken as "no".
+    chk=$(tok check "$PREV" 2>&1 || true)
+    case "$chk" in
+        *"has no root on chain"* | *"is not the one on chain"*)
+            echo "epoch $((N - 1))'s filed result is not the root on chain (cancelled and posted again?): epoch $N not computed. Put the posted file in $PREV (the poster keeps it), then run again"
+            exit 1
+            ;;
+    esac
     set -- "$@" --previous "$PREV"
 fi
 # The hub registry. An empty answer may be the RPC's (devnet's public RPC sometimes lists no
@@ -215,18 +225,39 @@ else
     # The poster may have posted epoch N while this one computed (review 2026-11-19): a pending
     # file written now would wait for an epoch already on chain. Asked again; an existing pending
     # file stays (the poster's `done` files it once it has posted).
-    now_next=$(tok next-epoch 2>/dev/null || echo "$N")
-    case "$now_next" in "" | *[!0-9]*) now_next=$N ;; esac
+    # (Review 2026-11-23: an RPC error was taken as "not posted", and a pending file the poster had
+    # posted could be replaced: one waiting is now left as it is unless the chain answers.)
+    now_next=$(tok next-epoch 2>/dev/null) || now_next=""
+    case "$now_next" in
+        "" | *[!0-9]*)
+            if [ -f "$old" ]; then
+                echo "epoch $N: the chain's next epoch could not be read again: the pending file left as it is (the timer tries again)"
+                exit 1
+            fi
+            now_next=$N
+            ;;
+    esac
     # (Also when one is pending: the poster posted it and files it with the hash it fetched, so
     # it must not be replaced now, review 2026-11-19.)
     if [ "$now_next" != "$N" ]; then
         echo "epoch $N was posted while it was computed (the chain now waits for epoch $now_next): the pending file left as it is"
         exit 0
     fi
-    # Nor one already on chain (posted between the question above and here).
-    if [ -f "$old" ] && tok check "$old" 2>/dev/null | grep -q "the file is the one on chain"; then
-        echo "epoch $N: the pending file is the one on chain (posted): left as it is"
-        exit 0
+    # Nor one already on chain (posted between the question above and here). Replaced only on the
+    # chain's word that it is not (review 2026-11-23: a failed check was taken as "not posted").
+    if [ -f "$old" ]; then
+        chk=$(tok check "$old" 2>&1 || true)
+        case "$chk" in
+            *"the file is the one on chain"*)
+                echo "epoch $N: the pending file is the one on chain (posted): left as it is"
+                exit 0
+                ;;
+            *"has no root on chain"* | *"is not the one on chain"*) ;;
+            *)
+                echo "epoch $N: the pending file could not be checked with the chain ($chk): left as it is (the timer tries again)"
+                exit 1
+                ;;
+        esac
     fi
     # The whole result, not only the root: the poster compares all of it (what the root does not
     # cover, such as the hubs and the inputs, is carried to the next epoch). Replaced by a rename,
@@ -234,6 +265,11 @@ else
     if [ -f "$old" ] && [ "$(jq -S -c . "$old")" = "$(jq -S -c . "$OUT")" ]; then
         echo "epoch $N computed again: the same result, it waits to be posted ($old)"
     elif [ -f "$old" ]; then
+        # The one replaced is kept by its hash (review 2026-11-23): the poster may have fetched and
+        # posted it meanwhile, and its `done N H` then files that one (neon-epoch-remote.sh).
+        h=$(jq -S -c . "$old" | sha256sum | cut -c1-64)
+        mkdir -p "$EPOCHS/pending/replaced"
+        cp "$old" "$EPOCHS/pending/replaced/epoch-$N-$h.json"
         install -m 644 "$OUT" "$old.new" && mv -f "$old.new" "$old"
         echo "epoch $N computed again with another result (a registry change, a clawback, an excuse or a late log): $old replaced"
     else

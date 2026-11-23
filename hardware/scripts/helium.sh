@@ -73,6 +73,8 @@ neond --help 2>/dev/null | grep -q -- '--lorawan' \
 DEVICE=$1
 REGION=${2:-EU868}
 ENV_FILE=$HW/devices/$DEVICE.env
+# A device name only (review 2026-11-23: a "../" in it sourced a file outside the checked scripts).
+case "$DEVICE" in "" | *[!a-z0-9-]*) die "unknown device '$DEVICE' (a name of hardware/devices/)" ;; esac
 [ -f "$ENV_FILE" ] || die "unknown device '$DEVICE' (no $ENV_FILE)"
 case "$REGION" in EU868|US915) ;; *) die "unknown region '$REGION'" ;; esac
 . "$ENV_FILE"
