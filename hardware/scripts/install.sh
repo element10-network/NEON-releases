@@ -48,6 +48,8 @@ if [ -z "$PRESET" ]; then
     [ -n "$PRESET" ] || PRESET=LongFast
 fi
 
+# A device name only (review 2026-11-23: a "../" in it sourced a file outside the checked scripts).
+case "$DEVICE" in "" | *[!a-z0-9-]*) die "unknown device '$DEVICE' (a name of hardware/devices/)" ;; esac
 [ -f "$ENV_FILE" ] || die "unknown device '$DEVICE' (no $ENV_FILE)"
 case "$REGION" in EU868|US915) ;; *) die "unknown region '$REGION'" ;; esac
 case "$CHIP" in auto|sx1302|sx1301) ;; *) die "unknown chip '$CHIP'" ;; esac

@@ -104,8 +104,11 @@ update() {
     # Its own lock, held to the end (review 2026-11-19: a oneshot service is "activating" while it
     # runs, which is-active did not see; a run that starts meanwhile finds it taken and waits a day).
     mkdir -p "$STATE/epochs"
+    # (Never through a link, as root; and the posting user's, who opens it too, review 2026-11-23.)
+    [ ! -L "$STATE/epochs" ] && [ ! -L "$STATE/epochs/.lock" ] || die "$STATE/epochs or its .lock is a link: nothing installed"
     exec 8>>"$STATE/epochs/.lock"
-    flock -n 8 || die "a posting run is going: update when it is over"
+    chown "$USER_NAME:$USER_NAME" "$STATE/epochs" "$STATE/epochs/.lock" 2>/dev/null || true
+    flock -n 8 || die "a posting run or another update is going: update when it is over"
     # Everything checked: install.
     for tool in neon-oracle neon-token; do
         [ -f "$TMP/$tool" ] && install -m 755 "$TMP/$tool" "$BIN/$tool"
@@ -253,7 +256,19 @@ url_host() { case "$1" in *://*) echo "$1" | sed -E 's|^([A-Za-z][A-Za-z0-9+.-]*
 # url_port URL: the port an address names (none: nothing), past its user part, IPv6 too.
 url_port() { echo "$1" | sed -En 's|^[A-Za-z][A-Za-z0-9+.-]*://([^/?#]*@)?(\[[^]]*\]\|[^]/?#@:]*):([0-9]+)([/?#].*)?$|\3|p'; }
 # Text from elsewhere on the screen: no control characters (no escape sequences), one line, cut.
-plain() { tr '\n' ' ' | tr -d '\000-\037\177' | cut -c1-"${1:-200}"; }
+# (UTF-8's C1 controls too, \xc2\x80-\x9f: some terminals take them as escapes, review 2026-11-23.)
+plain() { tr '\n' ' ' | LC_ALL=C sed 's/\xc2[\x80-\x9f]//g' | tr -d '\000-\037\177' | cut -c1-"${1:-200}"; }
+# The electrode's address from the settings, only if it is one (never an ssh option, review 2026-11-23).
+remote_ok() {
+    case "$1" in "" | -* | *[!A-Za-z0-9@._-]*) return 1 ;; esac
+    case "$2" in "" | *[!0-9]*) return 1 ;; esac
+}
+# The electrode over SSH, with nothing typed on the screen reaching it (-n) and a deadline for all of it.
+ssh_electrode() {
+    remote_ok "$remote" "${port:-22}" || return 1
+    as_user timeout 40 ssh -n -i "$STATE/ssh/id_ed25519" -p "${port:-22}" -o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
+        -o UserKnownHostsFile="$STATE/ssh/known_hosts" "$remote" "$@"
+}
 rpc_url() { case "$1" in devnet|"") echo https://api.devnet.solana.com ;; mainnet|mainnet-beta) echo https://api.mainnet-beta.solana.com ;; testnet) echo https://api.testnet.solana.com ;; *) echo "$1" ;; esac; }
 status() {
     echo "Release      $(cat "$HOME_DIR/version" 2>/dev/null || echo 'none yet (Update)')"
@@ -277,7 +292,7 @@ status() {
     fi
     # From the file each run leaves (neon-post.sh --record-run), which a restart keeps; systemd's
     # own memory of it before that file existed.
-    if [ -r "$STATE/last-run" ] && read -r t r x < "$STATE/last-run" && case "$t" in "" | *[!0-9]*) false ;; *) true ;; esac; then
+    if [ -f "$STATE/last-run" ] && [ ! -L "$STATE/last-run" ] && read -r t r x < "$STATE/last-run" && case "$t" in "" | *[!0-9]*) false ;; *) true ;; esac; then
         r=$(printf '%s' "$r" | tr -cd 'a-z-'); x=$(printf '%s' "$x" | tr -cd '0-9A-Z?')
         echo "Last run     $(date -d "@$t" '+%a %Y-%m-%d %H:%M:%S %Z') (${r:-unknown}$( [ "$r" = success ] || echo ", exit ${x:-?}"))"
     else
@@ -301,10 +316,9 @@ print("1"*(len(b)-len(b.lstrip(b"\0")))+s)')
         # The monitor asks every 10 minutes, not every minute (a login on the electrode each time).
         # (Not past a posting run since: what waited may be filed now, review 2026-11-23.)
         if [ -n "${VAULT_MONITOR:-}" ] && [ -f "${VAULT_CACHE:-$TMP}/waiting.line" ] && [ -n "$(find "${VAULT_CACHE:-$TMP}/waiting.line" -mmin -10 2>/dev/null)" ] \
-            && ! [ "$STATE/last-run" -nt "${VAULT_CACHE:-$TMP}/waiting.line" ]; then
+            && ! [ "$STATE/last-run" -nt "${VAULT_CACHE:-$TMP}/waiting.line" ] && ! [ "$CONF" -nt "${VAULT_CACHE:-$TMP}/waiting.line" ]; then
             cat "${VAULT_CACHE:-$TMP}/waiting.line"
-        elif as_user ssh -i "$STATE/ssh/id_ed25519" -p "${port:-22}" -o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
-            -o UserKnownHostsFile="$STATE/ssh/known_hosts" "$remote" list > "$TMP/waiting" 2>/dev/null; then
+        elif ssh_electrode list > "$TMP/waiting" 2>/dev/null; then
             waiting=$(plain 120 < "$TMP/waiting")
             echo "On electrode ${waiting:-answers, nothing waiting}" | tee "${VAULT_CACHE:-$TMP}/waiting.line"
         else
@@ -367,7 +381,7 @@ screens() {
 # The vault's menu after logging in on a console (Alt+F2...; the first shows the monitor); "Shell" leaves it.
 case "$(tty)" in /dev/tty[0-9]*) [ -z "${VAULT_SHELL:-}" ] && /opt/neon-vault/vault.sh menu ;; esac
 EOF2
-    chown "$USER_NAME:$USER_NAME" "$profile"
+    chown -h "$USER_NAME:$USER_NAME" "$profile"
     # The first console: the monitor instead of a login (nothing can be typed there). Someone logged
     # in there (the menu that runs this update): not now, it would end that session and this update
     # with it (review 2026-11-19), but from the next start.
@@ -420,6 +434,7 @@ import re
 import shutil
 import signal
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -478,6 +493,11 @@ def cut(s, w):
     return "".join(out)
 
 
+def col(s, w):
+    """A table column: cut one short of its width, so the next always has a space before it."""
+    return pad(s, w - 1) + " "
+
+
 def tw(s):
     return sum(cwidth(c) for c in s)
 
@@ -504,10 +524,13 @@ def run(cmd, timeout=40, env=None):
         return 1, ""
 
     def kill():
-        try:
-            os.killpg(p.pid, signal.SIGKILL)
-        except OSError:
-            pass
+        # (TERM first, KILL two seconds later: a shell's EXIT trap still cleans its temporary folder.)
+        for sig, wait in ((signal.SIGTERM, 2), (signal.SIGKILL, 0)):
+            try:
+                os.killpg(p.pid, sig)
+            except OSError:
+                return
+            time.sleep(wait)
     timer = threading.Timer(timeout, kill)
     timer.start()
     try:
@@ -565,31 +588,43 @@ class Data:
         self.lock = threading.Lock()
         self.status, self.machine, self.log = [], [], ""
         self.explore, self.explore_err, self.explore_host = None, "", ""
-        self.scan, self.scan_t = None, 0.0
+        self.scan, self.scan_t, self.scan_err = None, 0.0, ""
         self.updated = 0.0
 
     def refresh(self):
+        # Each part on its own: one that fails keeps the others current (review 2026-11-23: one error
+        # threw the whole minute away, and the screen showed old data as if current).
+        time.tzset()
+
+        def part(read, fallback):
+            try:
+                return read()
+            except Exception:
+                return fallback
         env = dict(os.environ, VAULT_MONITOR="1", VAULT_CACHE=CACHE)
-        _, out = run(["sh", VAULT, "status"], env=env, timeout=120)
+        out = part(lambda: run(["sh", VAULT, "status"], env=env, timeout=120)[1], "")
         status = [clean(line) for line in out.splitlines() if line and not line.startswith("Admin key")]
-        machine = self.read_machine()
-        _, out = run(["journalctl", "-u", "neon-post", "-o", "cat", "--no-pager", "-n", "200"], timeout=20)
+        if not status:
+            status = ["Status       no answer (vault.sh status)"]
+        machine = part(self.read_machine, [])
+        out = part(lambda: run(["journalctl", "-u", "neon-post", "-o", "cat", "--no-pager", "-n", "200"], timeout=20)[1], "")
         log = ""
         for line in out.splitlines():
             if re.search(r"posted:|filed|no epoch waiting|ERROR|not posted|NOT", line):
                 log = clean(line)
-        explore, err, host = self.read_explore()
-        scan, scan_t = self.scan, self.scan_t
-        # (Every two minutes, answered or not: an electrode without `scan` yet is not asked every minute.)
-        if time.time() - scan_t >= SCAN_EVERY:
-            got = self.read_scan()
-            scan_t = time.time()
+        explore, err, host = part(self.read_explore, (None, "no answer", ""))
+        scan, scan_t, scan_err = self.scan, self.scan_t, self.scan_err
+        # (Every two minutes, answered or not, by the monotonic clock: a clock stepped back on a Pi
+        # without a real-time clock no longer stopped it.)
+        if scan_t == 0.0 or time.monotonic() - scan_t >= SCAN_EVERY:
+            got, scan_err = part(self.read_scan, (None, "could not read the answer"))
+            scan_t = time.monotonic()
             if got is not None:
                 scan = got
         with self.lock:
             self.status, self.machine, self.log = status, machine, log
             self.explore, self.explore_err, self.explore_host = explore, err, host
-            self.scan, self.scan_t = scan, scan_t
+            self.scan, self.scan_t, self.scan_err = scan, scan_t, scan_err
             self.updated = time.time()
 
     @staticmethod
@@ -627,37 +662,46 @@ class Data:
         if not url:
             return None, "no electrode in the settings", ""
         host = url_host(url)
-        if not url.lower().startswith(("https://", "http://")):
-            return None, "not a web address", host
+        if not url.lower().startswith("https://"):
+            return None, "not an https address", host
+        # curl under run(): a deadline for the whole answer (a trickle no longer held the refresh for
+        # hours), https only, no redirects (review 2026-11-23).
+        code, body = run(["curl", "-fsS", "-m", "25", "--proto", "=https", "--max-filesize", str(MAX_BYTES),
+                          "--", url], timeout=30)
+        if code != 0:
+            return None, f"no answer (curl {code})", host
         try:
-            with urllib.request.urlopen(url, timeout=20) as r:
-                body = r.read(MAX_BYTES + 1)
-            if len(body) > MAX_BYTES:
-                return None, "answer too large", host
             j = json.loads(body)
             if not isinstance(j, dict) or not isinstance(j.get("figures"), dict):
                 return None, "not the explorer's data", host
             return j, "", host
-        except Exception as e:  # any failure is only "no answer" on the screen
-            return None, "no answer (" + clean(type(e).__name__) + ")", host
+        except Exception as e:  # any failure is only "not the explorer's data" on the screen
+            return None, "not the explorer's data (" + clean(type(e).__name__) + ")", host
 
     @staticmethod
     def read_scan():
+        """The scanner's packets and, when there are none, why."""
         remote, port = conf("REMOTE"), conf("PORT") or "22"
-        if not remote or not port.isdigit():
-            return None
+        if not remote:
+            return None, "no electrode in the settings"
+        # (A REMOTE that ssh would read as an option, -oProxyCommand=..., is not run: review 2026-11-23.)
+        if remote.startswith("-") or not re.fullmatch(r"[A-Za-z0-9@._-]+", remote) or not port.isdigit():
+            return None, "REMOTE or PORT in the settings is not an address"
         code, out = run(["runuser", "-u", USER, "--", "ssh", "-i", f"{STATE}/ssh/id_ed25519", "-p", port,
                          "-o", "BatchMode=yes", "-o", "ConnectTimeout=15",
                          "-o", "ServerAliveInterval=10", "-o", "ServerAliveCountMax=2",
                          "-o", f"UserKnownHostsFile={STATE}/ssh/known_hosts", remote, "scan"], timeout=40)
         if code != 0:
-            return None
+            return None, "no answer from the electrode (SSH)"
         try:
             j = json.loads(out)
-            items = j.get("items") if isinstance(j, dict) else None
-            return [i for i in items if isinstance(i, dict)] if isinstance(items, list) else None
-        except ValueError:
-            return None
+        except Exception:  # (deep nesting raises RecursionError, not ValueError)
+            return None, "not the scanner's data"
+        items = j.get("items") if isinstance(j, dict) else None
+        if not isinstance(items, list):
+            return None, "not the scanner's data"
+        # (At most 200: a huge list must not cost every frame, review 2026-11-23.)
+        return [i for i in items[:200] if isinstance(i, dict)], ""
 
 
 def refresher(data, stop):
@@ -748,7 +792,7 @@ class Screen:
             d = self.data
             status, machine, log = list(d.status), list(d.machine), d.log
             ex, ex_err, ex_host = d.explore, d.explore_err, d.explore_host
-            scan, scan_t, updated = d.scan, d.scan_t, d.updated
+            scan, scan_t, updated, scan_err = d.scan, d.scan_t, d.updated, d.scan_err
         now = time.time()
         # The header: the logo, the machine's name and the time.
         host = clean(os.uname().nodename)
@@ -758,7 +802,11 @@ class Screen:
         self.put(s, 1, 13, [(time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime(now)), 0)], W - 14)
         self.put(s, 2, 13, [(time.strftime("%H:%M %Z local", time.localtime(now)), 0)], W - 14)
         note = ("data " + time.strftime("%H:%M:%S", time.localtime(updated))) if updated else "reading..."
-        self.put(s, 0, max(13, W - tw(note) - 2), [(note, self.BLUE)], tw(note))
+        # (Old data says so in red: a refresh that hangs no longer looks current.)
+        stale = updated and now - updated > 3 * EVERY
+        if stale:
+            note += " (old)"
+        self.put(s, 0, max(13, W - tw(note) - 2), [(note, self.RED if stale else self.BLUE)], tw(note))
         top = 4
         split = W >= 120
         lw = (W * 3) // 5 if split else W
@@ -790,7 +838,7 @@ class Screen:
         # Right: the world scanner.
         if split:
             iy, ix, ih, iw = self.box(top, lw, H - top, rw, "WORLD SCANNER")
-            for i, parts in enumerate(self.safe(self.scan_lines, scan, scan_t, iw)[:ih]):
+            for i, parts in enumerate(self.safe(self.scan_lines, scan, scan_err, iw)[:ih]):
                 self.put(s, iy + i, ix, parts, iw)
         s.refresh()
 
@@ -829,22 +877,23 @@ class Screen:
     def atom_lines(self, ex, w):
         if not ex:
             return []
-        atoms = [a for a in (ex.get("atoms") or []) if isinstance(a, dict)]
+        # (At most 500: a huge list must not cost every frame, review 2026-11-23.)
+        atoms = [a for a in (ex.get("atoms") or [])[:500] if isinstance(a, dict)]
         atoms.sort(key=lambda a: (a.get("online") is not True, -num(a.get("photons_today"))))
         now_ms = time.time() * 1000
-        out = [[(pad("", 4) + pad("name", 22) + pad("kind", 11) + pad("version", 10) + pad("today", 9) + "seen", curses.A_BOLD)]]
+        out = [[(pad("", 4) + col("name", 22) + col("kind", 11) + col("version", 10) + col("today", 9) + "seen", curses.A_BOLD)]]
         for a in atoms:
             on = a.get("online") is True
             name = clean(a.get("name")) or clean(a.get("peer"))[:12]
             seen = "" if on else ("not seen" if not num(a.get("last_ms")) else ago(a.get("last_ms"), now_ms) + " ago")
             out.append([("on  " if on else "off ", self.GREEN if on else self.RED),
-                        (pad(name, 22) + pad("electrode" if a.get("hub") is True else "atom", 11)
-                         + pad(clean(a.get("version")) or "?", 10) + pad(f"{num(a.get('photons_today')):.1f}", 9) + seen, 0)])
+                        (col(name, 22) + col("electrode" if a.get("hub") is True else "atom", 11)
+                         + col(clean(a.get("version")) or "?", 10) + col(f"{num(a.get('photons_today')):.1f}", 9) + seen, 0)])
         return out
 
-    def scan_lines(self, scan, scan_t, w):
+    def scan_lines(self, scan, scan_err, w):
         if scan is None:
-            return [[("nothing yet (the electrode answers once it runs this release)", self.BLUE)]]
+            return [[(scan_err or "nothing yet", self.RED if scan_err else self.BLUE)]]
         now_ms = time.time() * 1000
         out = [[(f"{len(scan)} packets, newest {ago(scan[0].get('t'), now_ms) if scan else '?'} ago", self.BLUE)]]
         kinds = {"text": "text", "position": "pos", "nodeinfo": "node", "telemetry": "tele", "advert": "advert"}
@@ -871,11 +920,16 @@ def main(scr):
     threading.Thread(target=refresher, args=(data, stop), daemon=True).start()
     screen = Screen(scr, data)
     scr.timeout(1000)
+    told = set()
     while True:
         try:
             screen.draw()
-        except Exception:
-            pass
+        except Exception as e:
+            # (Once per kind of failure to the journal, not silently.)
+            why = repr(e)[:200]
+            if why not in told and len(told) < 50:
+                told.add(why)
+                print("vault monitor: drawing failed:", why, file=sys.stderr, flush=True)
         # A key does nothing; a resize is drawn at once.
         try:
             scr.getch()
@@ -905,8 +959,12 @@ monitor() {
         printf '\033%%G'
         # Not exec'd: a screen that cannot start (a curses error, a file not written) falls back to the
         # plain-text one below instead of a blank screen restarted every 10 s (review 2026-11-23).
+        started=$(date +%s)
         env LANG=C.UTF-8 LC_ALL=C.UTF-8 NCURSES_NO_UTF8_ACS=1 python3 "$HOME_DIR/vault-monitor.py" && exit 0
-        echo "the curses screen stopped: the plain-text one instead" >&2
+        # (One that ran a while and then died, killed or out of memory: systemd starts it again in 10 s;
+        # one that cannot start at all: the plain-text screen, review 2026-11-23.)
+        [ $(($(date +%s) - started)) -lt 30 ] || exit 1
+        echo "the curses screen could not start: the plain-text one instead" >&2
     fi
     # Without Python's curses: the screen as plain text (each a line short of the screen: the last
     # newline would scroll the top away).
@@ -985,12 +1043,12 @@ fit() {
 SCAN_EVERY_MIN=2
 scan_column() {
     w=$1; rows=$2
+    [ "$rows" -gt 3 ] 2>/dev/null || return 0
     remote=$(conf REMOTE); port=$(conf PORT)
     # (When it was last asked, answered or not: a stamp of its own, every two minutes either way.)
     if [ -n "$remote" ] && { [ ! -f "$TMP/scan.tried" ] || [ -z "$(find "$TMP/scan.tried" -mmin -"$SCAN_EVERY_MIN" 2>/dev/null)" ]; }; then
         touch "$TMP/scan.tried"
-        if as_user ssh -i "$STATE/ssh/id_ed25519" -p "${port:-22}" -o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
-            -o UserKnownHostsFile="$STATE/ssh/known_hosts" "$remote" scan 2>/dev/null | head -c 2000000 > "$TMP/scan.new" \
+        if ssh_electrode scan 2>/dev/null | head -c 2000000 > "$TMP/scan.new" \
             && jq -e '.items | arrays' "$TMP/scan.new" >/dev/null 2>&1; then
             mv -f "$TMP/scan.new" "$TMP/scan.json"
         else
@@ -1007,7 +1065,7 @@ scan_column() {
     fi
     jq -r --arg d "$dim" --arg o "$off" --argjson now "$(date +%s)000" '
         def num: if type == "number" then . else (tostring | tonumber? // 0) end;
-        "\($d)\(.items | length) packets, newest \((([$now - (.items[0].t | num), 0] | max) / 60000 | floor) as $m | if $m < 60 then "\($m)m" else "\($m / 60 | floor)h" end) ago, from the electrode\($o)"
+        (.items | map(objects)) as $i | "\($d)\($i | length) packets, newest \((([$now - ($i[0].t | num), 0] | max) / 60000 | floor) as $m | if $m < 60 then "\($m)m" else "\($m / 60 | floor)h" end) ago, from the electrode\($o)"
     ' "$TMP/scan.json" 2>/dev/null
     rule
     # The newest first; the text from elsewhere without control characters (as the atoms list).
@@ -1065,6 +1123,7 @@ monitor_top() {
         -e "s/(exit-code, exit \([^)]*\))/${red}(failed, exit \1)${off}/" \
         -e "s/(\(timeout\|signal\|core-dump\|oom-kill\|resources\)[^)]*)/${red}&${off}/" \
         -e "s/? (no answer[^)]*)/${red}&${off}/" \
+        -e "/^Last run/{/(success)/!s/([a-z-]*, exit [^)]*)/${red}&${off}/}" \
         -e '/^Admin key/d'
     # The machine itself.
     temp=$(awk '{printf "%.0f", $1/1000}' /sys/class/thermal/thermal_zone0/temp 2>/dev/null || echo '?')
@@ -1118,16 +1177,16 @@ menu() {
             reboot "Restart" \
             off "Shut down" 3>&1 1>&2 2>&3) || { clear; echo "/opt/neon-vault/vault.sh menu brings the menu back."; VAULT_SHELL=1 exec "${SHELL:-/bin/bash}" -l; }
         case "$c" in
-            status) status > /tmp/vault-status 2>&1 || true; whiptail --title "Status" --scrolltext --textbox /tmp/vault-status 22 78 ;;
+            status) status > /tmp/vault-status 2>&1 || true; whiptail --title "Status" --scrolltext --textbox /tmp/vault-status 22 78 || true ;;
             post) clear; as_root systemctl start neon-post.service || true; journalctl -u neon-post -n 30 -o cat --no-pager > /tmp/vault-log 2>&1 || true
-                whiptail --title "Posting" --scrolltext --textbox /tmp/vault-log 22 78 ;;
-            log) journalctl -u neon-post -n 300 -o short-iso --no-pager > /tmp/vault-log 2>&1 || true; whiptail --title "Posting log" --scrolltext --textbox /tmp/vault-log 22 78 ;;
-            update) clear; "$0" update > /tmp/vault-update 2>&1 || true; whiptail --title "Update" --scrolltext --textbox /tmp/vault-update 20 78 ;;
-            monitor) whiptail --msgbox "The monitor runs on the first screen all the time: Alt+F1 shows it, Alt+F2 comes back here. Nothing can be typed there." 10 60 ;;
+                whiptail --title "Posting" --scrolltext --textbox /tmp/vault-log 22 78 || true ;;
+            log) journalctl -u neon-post -n 300 -o short-iso --no-pager > /tmp/vault-log 2>&1 || true; whiptail --title "Posting log" --scrolltext --textbox /tmp/vault-log 22 78 || true ;;
+            update) clear; "$0" update > /tmp/vault-update 2>&1 || true; whiptail --title "Update" --scrolltext --textbox /tmp/vault-update 20 78 || true ;;
+            monitor) whiptail --msgbox "The monitor runs on the first screen all the time: Alt+F1 shows it, Alt+F2 comes back here. Nothing can be typed there." 10 60 || true ;;
             auto) if systemctl is-enabled -q neon-vault-update.timer 2>/dev/null; then
                     whiptail --yesno "Turn automatic updates off? Updates are then only installed with Update." 9 70 && as_root systemctl disable --now neon-vault-update.timer || true
                 elif [ ! -f /etc/systemd/system/neon-vault-update.timer ]; then
-                    whiptail --msgbox "Update once first (this release's timer is not installed yet)." 8 60
+                    whiptail --msgbox "Update once first (this release's timer is not installed yet)." 8 60 || true
                 else
                     whiptail --yesno "Turn automatic updates on? Every day around 12:00 UTC the vault installs a newer release if there is one, with the same checks as Update (signed by a release key, never older), and never during a posting run." 11 72 && as_root systemctl enable --now neon-vault-update.timer || true
                 fi ;;
@@ -1138,7 +1197,7 @@ menu() {
                     whiptail --yesno "Turn the posting timer on (daily 03:15 UTC)? First make sure the old posting machine's timer is off: two posters must never run." 10 72 && as_root systemctl enable --now neon-post.timer || true
                 fi ;;
             # A port changed in the settings is opened at once.
-            edit) as_root nano "$CONF" || true; as_root "$0" firewall > /tmp/vault-out 2>&1 || whiptail --title "Firewall" --scrolltext --textbox /tmp/vault-out 16 78 ;;
+            edit) as_root nano "$CONF" || true; as_root "$0" firewall > /tmp/vault-out 2>&1 || whiptail --title "Firewall" --scrolltext --textbox /tmp/vault-out 16 78 || true ;;
             reboot) whiptail --yesno "Restart the vault?" 8 40 && as_root systemctl reboot || true ;;
             off) whiptail --yesno "Shut the vault down? Nothing is posted while it is off." 8 64 && as_root systemctl poweroff || true ;;
         esac
@@ -1158,10 +1217,10 @@ keys_menu() {
         case "$c" in
             fetch) h=$(whiptail --inputbox "The old posting machine, as USER@HOST (its address on this network works too)" 9 72 3>&1 1>&2 2>&3) || continue
                 p=$(whiptail --inputbox "Its SSH port" 9 40 22 3>&1 1>&2 2>&3) || continue
-                clear; "$0" fetch "$h" "$p" || true; printf '\nEnter to go back to the menu. '; read -r _ ;;
+                clear; "$0" fetch "$h" "$p" || true; printf '\nEnter to go back to the menu. '; read -r _ || true ;;
             import|wipe) d=$(whiptail --inputbox "The stick's neon-vault folder (plug the stick in first)" 9 72 "$(stick)" 3>&1 1>&2 2>&3) || continue
-                clear; "$0" "$c" "$d" > /tmp/vault-out 2>&1 || true; whiptail --title "$c" --scrolltext --textbox /tmp/vault-out 16 78 ;;
-            eject) sync; as_root umount /mnt/stick 2>/dev/null || true; whiptail --msgbox "The stick can be taken out." 7 40 ;;
+                clear; "$0" "$c" "$d" > /tmp/vault-out 2>&1 || true; whiptail --title "$c" --scrolltext --textbox /tmp/vault-out 16 78 || true ;;
+            eject) sync; as_root umount /mnt/stick 2>/dev/null || true; whiptail --msgbox "The stick can be taken out." 7 40 || true ;;
         esac
     done
 }

@@ -65,6 +65,8 @@ die() { echo "ERROR: $*" >&2; exit 1; }
 step() { echo; echo "==> $*"; }
 
 [ "$(id -u)" = 0 ] || die "run as root (curl ... | sudo sh)"
+# A device name only (review 2026-11-23: a "../" in it sourced a file outside the checked scripts).
+case "$DEVICE" in "" | *[!a-z0-9-]*) die "unknown device '$DEVICE' (NEON_DEVICE: a name of hardware/devices/)" ;; esac
 command -v apt-get >/dev/null || die "this installer needs Raspberry Pi OS or another Debian system"
 
 step "Packages"
@@ -125,7 +127,7 @@ asset() {
 vle() { [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n 1)" = "$1" ]; }
 # An older release is never installed from here: making an old release the newest cannot bring back
 # its unchecked scripts or fixed bugs. Raised with each stable release (the one before it).
-MIN_RELEASE=0.11.8
+MIN_RELEASE=0.11.9
 # The scripts run as root: unless a branch or tag is given (or the private source is used), they
 # come from the newest release's tag and must match the tree hash its signed scripts.txt names.
 # Every failure stops the install (a download that fails is not "an older release").
@@ -144,6 +146,8 @@ if [ -z "$REF" ] && [ "$FROM" = "$GH_REPO" ]; then
     asset scripts.txt "$REL/scripts.txt" || die "could not download the release's scripts.txt: not installed"
     asset scripts.sig "$REL/scripts.sig" || die "could not download the release's scripts.sig: not installed"
     signed "$REL/scripts.txt" "$REL/scripts.sig" || die "the release's scripts.txt is not signed by a release key: not installed"
+    # A scripts list, not another file the same key signs (review 2026-11-23; as release.txt's below).
+    [ "$(head -n 1 "$REL/scripts.txt")" = neon-scripts/1 ] || die "the release's scripts.txt is not a scripts list: not installed"
     [ "$(sed -n 's/^version //p' "$REL/scripts.txt")" = "$VERSION" ] ||
         die "the release's scripts.txt is for another version: not installed"
     CHECK_SCRIPTS=$(sed -n 's/^tree \([0-9a-f]\{64\}\)$/\1/p' "$REL/scripts.txt")
@@ -339,6 +343,14 @@ build_from_source() {
     fi
     built=$("$BIN.new" --version | awk '{print $NF}'); built=${built%%+*}
     vle "$MIN_RELEASE" "$built" || { rm -f "$BIN.new"; die "neond $built from $REF is older than $MIN_RELEASE: not installed"; }
+    # A newer neond already here is kept, as with a release (review 2026-11-23: a development atom
+    # built again from stable went back a version; NEON_DOWNGRADE=1 to install it anyway).
+    cur_v=$("$BIN" --version 2>/dev/null | awk '{print $NF}'); cur_v=${cur_v%%+*}
+    if [ -n "$cur_v" ] && [ "$cur_v" != "$built" ] && vle "$built" "$cur_v" && [ "${NEON_DOWNGRADE:-0}" != 1 ]; then
+        rm -f "$BIN.new"
+        echo "keeping neond $cur_v (newer than $built from $REF; NEON_DOWNGRADE=1 to install it anyway)"
+        return 0
+    fi
     mv -f "$BIN.new" "$BIN"
     forget_update_guard
 }

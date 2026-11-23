@@ -9,7 +9,8 @@
 # same root), check with the chain what comes next (neon-token next-epoch), post it with the admin key
 # (neon-token checks the file, the proofs and the previous root on chain), then have the
 # electrode file it. An epoch already on chain (a run that posted but could not file it) is only
-# filed. The electrode lets this key do nothing else (neon-epoch-remote.sh).
+# filed. The electrode lets this key do nothing else (neon-epoch-remote.sh; but read its world scanner's
+# newest packets, `scan`, for the vault's screen).
 #
 # Settings: /etc/neon/post.conf, KEY=VALUE:
 #   NEON_TOKEN=/home/ne/NEON-token/target/release/neon-token
@@ -60,9 +61,15 @@ PORT=${PORT:-22}
 KEEP=${KEEP:-/var/lib/neon-post/epochs}
 LOCAL_EPOCHS=${LOCAL_EPOCHS:-/var/lib/neon/reports/epochs}
 mkdir -p "$KEEP"
-# One run at a time (the timer and one started by hand would both post the same epoch).
-exec 9>"$KEEP/.lock"
-flock -n 9 || { echo "already running"; exit 75; }
+# One run at a time (the timer and one started by hand would both post the same epoch). Always the
+# same lock, wherever KEEP is (review 2026-11-23: the vault's update takes this one; with KEEP set
+# elsewhere an update could swap the programs in the middle of a run). Waited for up to 10 minutes
+# (an update that holds it no longer costs the day's run); a run still going then: 75, nothing done.
+LOCK=${NEON_POST_LOCK:-/var/lib/neon-post/epochs/.lock}
+mkdir -p "${LOCK%/*}"
+[ ! -L "$LOCK" ] || { echo "$LOCK is a link: nothing done" >&2; exit 1; }
+exec 9>>"$LOCK"
+flock -w 600 9 || { echo "already running"; exit 75; }
 
 remote() {
     ssh -i "$SSH_KEY" -p "$PORT" -o BatchMode=yes -o ConnectTimeout=30 \
@@ -186,7 +193,14 @@ for n in $waiting; do
     # recorded in its result, shown here).
     work=$(mktemp -d)
     trap 'rm -rf "$work"' EXIT
-    remote logs "$n" | tar xzf - -C "$work" || { echo "epoch $n: its day logs could not be fetched: not posted" >&2; exit 1; }
+    # Unpacked into a directory of their own, apart from this script's own files (review 2026-11-23:
+    # a link in the electrode's tar named like one of them, theirs.sorted say, had them written
+    # through it, into the hub history's cache or the kept epochs). Plain files and directories only.
+    mkdir "$work/logs"
+    remote logs "$n" | tar xzf - --no-same-owner --no-same-permissions -C "$work/logs" ||
+        { echo "epoch $n: its day logs could not be fetched: not posted" >&2; exit 1; }
+    odd=$(find "$work/logs" ! -type f ! -type d | head -n 3)
+    [ -z "$odd" ] || { echo "epoch $n: the electrode's logs hold something other than files and directories ($odd): not posted" >&2; exit 1; }
     # The registry as the chain has it now: a hub registered (or a wallet changed) since the
     # electrode's run gives another root, and the epoch waits (compute it again on the electrode).
     prev="$KEEP/epoch-$((n - 1)).json"
@@ -309,7 +323,7 @@ for n in $waiting; do
         jq '.clawback' "$theirs_file" > "$work/clawback.json"
         set -- "$@" --clawback "$work/clawback.json"
     fi
-    if ! "$NEON_ORACLE" "$@" "$work"; then
+    if ! "$NEON_ORACLE" "$@" "$work/logs"; then
         rm -rf "$work"
         echo "epoch $n could not be computed here: not posted" >&2
         exit 1

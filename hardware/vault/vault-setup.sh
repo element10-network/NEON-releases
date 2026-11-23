@@ -5,10 +5,11 @@
 #   curl -fsSL https://raw.githubusercontent.com/element10-network/NEON-releases/main/hardware/vault/vault-setup.sh | sudo sh
 #
 # It removes the SSH server and every other service that listens, turns on a firewall that drops all
-# incoming connections and lets out only DNS, time, HTTPS and the electrode's SSH port, installs the
-# newest signed release's neon-oracle, neon-token, neon-post.sh and the menu (vault.sh update: each
-# checked against the release key), and starts the menu on the screen after logging in. The posting
-# timer stays off until the settings and keys are imported and it is turned on in the menu.
+# incoming connections and lets out only DNS, DHCP, time, ping, HTTP(S), the electrode's SSH port and any
+# port an RPC address names, installs the newest signed release's neon-oracle, neon-token, neon-post.sh,
+# the menu, the monitor and the (off) automatic updates (vault.sh update: each checked against the
+# release key), and puts the monitor on the first screen and the menu on the others after logging in.
+# The posting timer stays off until the settings and keys are imported and it is turned on in the menu.
 set -eu
 die() { echo "ERROR: $*" >&2; exit 1; }
 [ "$(id -u)" = 0 ] || die "run with sudo"

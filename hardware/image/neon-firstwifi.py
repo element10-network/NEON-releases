@@ -14,6 +14,7 @@ The hotspot itself is neon-firstboot's (it opens and closes it); this joins the 
 /run/neon/firstwifi-status (shown on the page when the hotspot opens again).
 """
 import html
+import ipaddress
 import os
 import re
 import socket
@@ -300,6 +301,22 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
 
+# Only phones on the setup Wi-Fi (review 2026-11-23: the page answered on every network, a cable's
+# too, and anyone there could have the atom join a network of theirs without the setup code).
+# NetworkManager's shared mode gives the hotspot 10.42.0.1/24 (neon-captive.conf points every name
+# there); a sender elsewhere that claims such an address gets no answer back to it.
+SETUP_NET = ipaddress.ip_network(os.environ.get("NEON_SETUP_NET", "10.42.0.0/24"))
+
+
+class Server(ThreadingHTTPServer):
+    allow_reuse_address = True
+
+    def verify_request(self, request, client_address):
+        try:
+            return ipaddress.ip_address(client_address[0]) in SETUP_NET
+        except ValueError:
+            return False
+
+
 if __name__ == "__main__":
-    ThreadingHTTPServer.allow_reuse_address = True
-    ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()
+    Server(("0.0.0.0", PORT), Handler).serve_forever()

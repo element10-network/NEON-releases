@@ -51,9 +51,11 @@ ssid() {
 # The panel joining a network (it takes the hotspot down first): left alone meanwhile.
 JOINING=/run/neon/joining
 
+# (Also "connected (externally)": an uplink NetworkManager 1.42 and newer shows but does not manage,
+# ifupdown's or networkd's on Armbian; review 2026-11-23, (verify).)
 online() {
     nmcli -t -f TYPE,STATE,CONNECTION device 2>/dev/null | grep -v ":$CON\$" \
-        | grep -Eq '^(ethernet|wifi):connected:'
+        | grep -Eq '^(ethernet|wifi):connected( \(externally\))?:'
 }
 hotspot_on() { nmcli -t -f NAME connection show --active 2>/dev/null | grep -qx "$CON"; }
 # A Wi-Fi it knows besides its own hotspot (one it could go back to).
