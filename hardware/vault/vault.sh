@@ -257,7 +257,8 @@ url_host() { case "$1" in *://*) echo "$1" | sed -E 's|^([A-Za-z][A-Za-z0-9+.-]*
 url_port() { echo "$1" | sed -En 's|^[A-Za-z][A-Za-z0-9+.-]*://([^/?#]*@)?(\[[^]]*\]\|[^]/?#@:]*):([0-9]+)([/?#].*)?$|\3|p'; }
 # Text from elsewhere on the screen: no control characters (no escape sequences), one line, cut.
 # (UTF-8's C1 controls too, \xc2\x80-\x9f: some terminals take them as escapes, review 2026-11-23.)
-plain() { tr '\n' ' ' | LC_ALL=C sed 's/\xc2[\x80-\x9f]//g' | tr -d '\000-\037\177' | cut -c1-"${1:-200}"; }
+# (C0 first, then each C1 replaced, not deleted: a deletion could join its neighbours into a new one.)
+plain() { tr '\n' ' ' | tr -d '\000-\037\177' | LC_ALL=C sed 's/\xc2[\x80-\x9f]/?/g' | cut -c1-"${1:-200}"; }
 # The electrode's address from the settings, only if it is one (never an ssh option, review 2026-11-23).
 remote_ok() {
     case "$1" in "" | -* | *[!A-Za-z0-9@._-]*) return 1 ;; esac
