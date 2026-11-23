@@ -51,6 +51,15 @@ echo "==> The screens"
 grep -q 'vault.sh menu' /home/ne/.bash_profile 2>/dev/null || sh /opt/neon-vault/vault.sh screens
 
 echo
+# (The rounded corners only when the console's font has them, as vault.sh's monitor.)
+m=$(mktemp)
+if setfont -ou "$m" 2>/dev/null && grep -qi 'U+256d' "$m"; then
+    printf '%s\n' '╭╮╭╮╭╮╭╮' '│││╯││││   vault' '││╰ ╰╯││'
+else
+    printf '%s\n' '┌┐┌┐┌┐┌┐' '│││┘││││   vault' '││└ └┘││'
+fi
+rm -f "$m"
+echo
 echo "Done. After the next restart (sudo reboot) the first screen (Alt+F1) shows the monitor; the menu is"
 echo "on the next one (Alt+F2, log in as ne)."
 echo "Next, in the menu:"

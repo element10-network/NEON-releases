@@ -10,6 +10,8 @@
 #   done N [H] pending/epoch-N.json moved into epochs/ (once its root is on chain); with H, only if
 #             the file is still the one posted (H: sha256 of `jq -S -c .` of it; this electrode can
 #             compute the epoch again and replace a pending file between the poster's get and done)
+#   scan      the newest world-scanner packets (scan-latest.json, written by neond every 30 s): the
+#             vault's screen shows them (owner 2026-11-23; read only, public-channel packets only)
 #   logs N    the signed day logs pending epoch N was computed from (its days and the day after,
 #             this electrode's own, its mirrors' and the signatures seen), as a gzipped tar: the
 #             poster computes the epoch again from them and posts only the same root (decision 5)
@@ -22,7 +24,7 @@ set -- ${SSH_ORIGINAL_COMMAND:-}
 what=${1:-}
 n=${2:-}
 case "$n" in
-    "") [ "$what" = list ] || { echo "a number is needed" >&2; exit 2; } ;;
+    "") [ "$what" = list ] || [ "$what" = scan ] || { echo "a number is needed" >&2; exit 2; } ;;
     *[!0-9]*) echo "not a number: $n" >&2; exit 2 ;;
 esac
 case "$what" in
@@ -38,6 +40,8 @@ case "$what" in
         set -f
         ;;
     get) cat "$EPOCHS/pending/epoch-$n.json" ;;
+    # (None yet, or an electrode without the world scanner: an empty list.)
+    scan) cat "$REPORTS/scan-latest.json" 2>/dev/null || echo '{"items":[]}' ;;
     prev)
         [ "$n" -gt 0 ] || { echo "epoch 0 has none" >&2; exit 2; }
         cat "$EPOCHS/epoch-$((n - 1)).json"
@@ -90,5 +94,5 @@ case "$what" in
         mv "$f.filing" "$EPOCHS/epoch-$n.json"
         echo "epoch $n filed"
         ;;
-    *) echo "list, get N, prev N, logs N or done N" >&2; exit 2 ;;
+    *) echo "list, scan, get N, prev N, logs N or done N" >&2; exit 2 ;;
 esac
