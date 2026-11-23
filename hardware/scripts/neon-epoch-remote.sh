@@ -41,7 +41,10 @@ case "$what" in
         ;;
     get) cat "$EPOCHS/pending/epoch-$n.json" ;;
     # (None yet, or an electrode without the world scanner: an empty list.)
-    scan) cat "$REPORTS/scan-latest.json" 2>/dev/null || echo '{"items":[]}' ;;
+    scan)
+        [ -z "$n" ] || { echo "scan takes no number" >&2; exit 2; }
+        cat "$REPORTS/scan-latest.json" 2>/dev/null || echo '{"items":[]}'
+        ;;
     prev)
         [ "$n" -gt 0 ] || { echo "epoch 0 has none" >&2; exit 2; }
         cat "$EPOCHS/epoch-$((n - 1)).json"

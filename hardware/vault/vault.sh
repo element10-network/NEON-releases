@@ -299,14 +299,16 @@ print("1"*(len(b)-len(b.lstrip(b"\0")))+s)')
     if [ -s "$STATE/ssh/id_ed25519" ] || as_root test -s "$STATE/ssh/id_ed25519"; then
         # An empty list is an answer too (nothing waiting); no answer at all is a failed login or network.
         # The monitor asks every 10 minutes, not every minute (a login on the electrode each time).
-        if [ -n "${VAULT_MONITOR:-}" ] && [ -f "$TMP/waiting.line" ] && [ -n "$(find "$TMP/waiting.line" -mmin -10 2>/dev/null)" ]; then
-            cat "$TMP/waiting.line"
-        elif as_user ssh -i "$STATE/ssh/id_ed25519" -p "${port:-22}" -o BatchMode=yes -o ConnectTimeout=15 \
+        # (Not past a posting run since: what waited may be filed now, review 2026-11-23.)
+        if [ -n "${VAULT_MONITOR:-}" ] && [ -f "${VAULT_CACHE:-$TMP}/waiting.line" ] && [ -n "$(find "${VAULT_CACHE:-$TMP}/waiting.line" -mmin -10 2>/dev/null)" ] \
+            && ! [ "$STATE/last-run" -nt "${VAULT_CACHE:-$TMP}/waiting.line" ]; then
+            cat "${VAULT_CACHE:-$TMP}/waiting.line"
+        elif as_user ssh -i "$STATE/ssh/id_ed25519" -p "${port:-22}" -o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
             -o UserKnownHostsFile="$STATE/ssh/known_hosts" "$remote" list > "$TMP/waiting" 2>/dev/null; then
             waiting=$(plain 120 < "$TMP/waiting")
-            echo "On electrode ${waiting:-answers, nothing waiting}" | tee "$TMP/waiting.line"
+            echo "On electrode ${waiting:-answers, nothing waiting}" | tee "${VAULT_CACHE:-$TMP}/waiting.line"
         else
-            rm -f "$TMP/waiting.line"
+            rm -f "${VAULT_CACHE:-$TMP}/waiting.line"
             echo "On electrode ? (no answer: the electrode, its port or the SSH key)"
         fi
     fi
@@ -391,18 +393,528 @@ LOGO3='││╰ ╰╯││'
 # The rounded corners only when the console's font has them (setfont's map of it lists U+256D);
 # otherwise the square ones every console font has (owner 2026-11-23: no boxes or diamonds).
 logo_for_console() {
-    map=$(mktemp)
+    map="$TMP/fontmap"
     if setfont -ou "$map" 2>/dev/null && grep -qi 'U+256d' "$map"; then :; else
         LOGO1='┌┐┌┐┌┐┌┐'; LOGO2='│││┘││││'; LOGO3='││└ └┘││'
     fi
     rm -f "$map"
 }
+# The screen itself, in Python with curses (owner 2026-11-23: a real screen; the shell version below
+# scrolled the top away and its column line broke up on the console): kept in this file, written out
+# when the monitor starts, so one Update brings it.
+monitor_py() {
+    cat <<'VAULT_MONITOR_PY'
+#!/usr/bin/env python3
+# The vault's always-on screen (owner 2026-11-23: a real screen, with curses): the vault, the network
+# and the world scanner in framed panels, drawn in place (nothing scrolls), the clock every second,
+# the data every minute. Written by vault.sh monitor and run by neon-vault-monitor.service on tty1 as
+# root. Read only: Status's lines (vault.sh status), the electrode's public explorer data, and the
+# world scanner's newest packets through the vault's SSH key (neon-epoch-remote.sh scan). Nothing on
+# it takes input.
+import curses
+import json
+import locale
+import math
+import os
+import re
+import shutil
+import signal
+import subprocess
+import tempfile
+import threading
+import time
+import unicodedata
+import urllib.request
+
+VAULT = "/opt/neon-vault/vault.sh"
+CONF = "/etc/neon/post.conf"
+STATE = "/var/lib/neon-post"
+USER = "ne"
+CACHE = "/run/neon-vault"
+EVERY = 60
+SCAN_EVERY = 120
+MAX_BYTES = 2_000_000
+
+
+def conf(key):
+    """A setting from post.conf (KEY=VALUE, quoted or not; the last one counts)."""
+    value = ""
+    try:
+        with open(CONF, encoding="utf-8", errors="replace") as f:
+            for line in f:
+                if line.startswith(key + "="):
+                    value = line[len(key) + 1:].strip().strip("\"'")
+    except OSError:
+        pass
+    return value
+
+
+def clean(s):
+    """Text from elsewhere, as one line without control or format characters."""
+    if s is None:
+        return ""
+    s = str(s)
+    # Printable characters only (no controls, format or line separators, unassigned ones), and no
+    # variation selectors (an emoji's VS16 is drawn as a column of its own on some consoles).
+    return "".join(" " if c in "\t\n\r" else c for c in s
+                   if c in "\t\n\r" or (c.isprintable() and not 0xFE00 <= ord(c) <= 0xFE0F))
+
+
+def cwidth(c):
+    if unicodedata.category(c) in ("Mn", "Me") or unicodedata.combining(c):
+        return 0
+    return 2 if unicodedata.east_asian_width(c) in ("W", "F") else 1
+
+
+def cut(s, w):
+    """At most `w` columns of `s`."""
+    out, n = [], 0
+    for c in s:
+        k = cwidth(c)
+        if n + k > w:
+            break
+        out.append(c)
+        n += k
+    return "".join(out)
+
+
+def tw(s):
+    return sum(cwidth(c) for c in s)
+
+
+def pad(s, w):
+    s = cut(s, w)
+    return s + " " * (w - tw(s))
+
+
+def url_host(u):
+    """An address as shown: its scheme and host only (an RPC address can carry an API key)."""
+    m = re.match(r"^([A-Za-z][A-Za-z0-9+.-]*://)(?:[^/?#]*@)?([^/?#@]*)", u or "")
+    return m.group(1) + m.group(2) if m else (u or "")
+
+
+def run(cmd, timeout=40, env=None):
+    """A command's exit code and its first MAX_BYTES of output. At the timeout, or past MAX_BYTES, the
+    whole process group goes (review 2026-11-23: a stalled electrode's ssh outlived its shell, and a
+    huge answer was read into memory whole)."""
+    try:
+        p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL,
+                             env=env, start_new_session=True)
+    except OSError:
+        return 1, ""
+
+    def kill():
+        try:
+            os.killpg(p.pid, signal.SIGKILL)
+        except OSError:
+            pass
+    timer = threading.Timer(timeout, kill)
+    timer.start()
+    try:
+        data = p.stdout.read(MAX_BYTES + 1)
+        if len(data) > MAX_BYTES:
+            kill()
+            data = b""
+        p.stdout.close()
+        code = p.wait()
+    except (OSError, ValueError):
+        kill()
+        code, data = 1, b""
+    finally:
+        timer.cancel()
+        if p.poll() is None:
+            kill()
+            p.wait()
+    return code, data.decode("utf-8", "replace")
+
+
+def num(v):
+    """A number from elsewhere, or 0 (none, not a number, infinite)."""
+    try:
+        x = float(v)
+    except (TypeError, ValueError, OverflowError):
+        return 0.0
+    return x if math.isfinite(x) and abs(x) < 1e15 else 0.0
+
+
+def ago(ms, now_ms):
+    if not ms:
+        return "?"
+    m = max(0, int((now_ms - num(ms)) / 60000))
+    return f"{m}m" if m < 60 else f"{m // 60}h" if m < 2880 else f"{m // 1440}d"
+
+
+def logo():
+    """The rounded corners only when the console's font has them (setfont's map lists U+256D)."""
+    rounded = ("╭╮╭╮╭╮╭╮", "│││╯││││", "││╰ ╰╯││")
+    square = ("┌┐┌┐┌┐┌┐", "│││┘││││", "││└ └┘││")
+    try:
+        with tempfile.NamedTemporaryFile() as f:
+            code, _ = run(["setfont", "-ou", f.name], timeout=10)
+            if code == 0 and b"u+256d" in open(f.name, "rb").read().lower():
+                return rounded
+    except OSError:
+        pass
+    return square
+
+
+class Data:
+    """What the screen shows, refreshed in the background (a slow electrode never stops the clock)."""
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.status, self.machine, self.log = [], [], ""
+        self.explore, self.explore_err, self.explore_host = None, "", ""
+        self.scan, self.scan_t = None, 0.0
+        self.updated = 0.0
+
+    def refresh(self):
+        env = dict(os.environ, VAULT_MONITOR="1", VAULT_CACHE=CACHE)
+        _, out = run(["sh", VAULT, "status"], env=env, timeout=120)
+        status = [clean(line) for line in out.splitlines() if line and not line.startswith("Admin key")]
+        machine = self.read_machine()
+        _, out = run(["journalctl", "-u", "neon-post", "-o", "cat", "--no-pager", "-n", "200"], timeout=20)
+        log = ""
+        for line in out.splitlines():
+            if re.search(r"posted:|filed|no epoch waiting|ERROR|not posted|NOT", line):
+                log = clean(line)
+        explore, err, host = self.read_explore()
+        scan, scan_t = self.scan, self.scan_t
+        # (Every two minutes, answered or not: an electrode without `scan` yet is not asked every minute.)
+        if time.time() - scan_t >= SCAN_EVERY:
+            got = self.read_scan()
+            scan_t = time.time()
+            if got is not None:
+                scan = got
+        with self.lock:
+            self.status, self.machine, self.log = status, machine, log
+            self.explore, self.explore_err, self.explore_host = explore, err, host
+            self.scan, self.scan_t = scan, scan_t
+            self.updated = time.time()
+
+    @staticmethod
+    def read_machine():
+        out = []
+        try:
+            up = float(open("/proc/uptime").read().split()[0])
+            d, h, m = int(up // 86400), int(up % 86400 // 3600), int(up % 3600 // 60)
+            out.append(f"up {d}d {h}h {m}m" if d else f"up {h}h {m}m")
+        except (OSError, ValueError, IndexError):
+            pass
+        try:
+            out.append(f"{int(open('/sys/class/thermal/thermal_zone0/temp').read()) / 1000:.0f} °C")
+        except (OSError, ValueError):
+            pass
+        try:
+            du = shutil.disk_usage("/")
+            out.append(f"disk {du.used * 100 // du.total}% of {du.total // 2**30} GB")
+        except OSError:
+            pass
+        try:
+            mi = dict(line.split(":", 1) for line in open("/proc/meminfo") if ":" in line)
+            total = int(mi["MemTotal"].split()[0]) // 1024
+            avail = int(mi["MemAvailable"].split()[0]) // 1024
+            out.append(f"memory {total - avail}/{total} MB")
+        except (OSError, KeyError, ValueError):
+            pass
+        return out
+
+    @staticmethod
+    def read_explore():
+        remote, url = conf("REMOTE"), conf("EXPLORE")
+        if not url and remote:
+            url = "https://" + remote.split("@")[-1] + "/api/explore"
+        if not url:
+            return None, "no electrode in the settings", ""
+        host = url_host(url)
+        if not url.lower().startswith(("https://", "http://")):
+            return None, "not a web address", host
+        try:
+            with urllib.request.urlopen(url, timeout=20) as r:
+                body = r.read(MAX_BYTES + 1)
+            if len(body) > MAX_BYTES:
+                return None, "answer too large", host
+            j = json.loads(body)
+            if not isinstance(j, dict) or not isinstance(j.get("figures"), dict):
+                return None, "not the explorer's data", host
+            return j, "", host
+        except Exception as e:  # any failure is only "no answer" on the screen
+            return None, "no answer (" + clean(type(e).__name__) + ")", host
+
+    @staticmethod
+    def read_scan():
+        remote, port = conf("REMOTE"), conf("PORT") or "22"
+        if not remote or not port.isdigit():
+            return None
+        code, out = run(["runuser", "-u", USER, "--", "ssh", "-i", f"{STATE}/ssh/id_ed25519", "-p", port,
+                         "-o", "BatchMode=yes", "-o", "ConnectTimeout=15",
+                         "-o", "ServerAliveInterval=10", "-o", "ServerAliveCountMax=2",
+                         "-o", f"UserKnownHostsFile={STATE}/ssh/known_hosts", remote, "scan"], timeout=40)
+        if code != 0:
+            return None
+        try:
+            j = json.loads(out)
+            items = j.get("items") if isinstance(j, dict) else None
+            return [i for i in items if isinstance(i, dict)] if isinstance(items, list) else None
+        except ValueError:
+            return None
+
+
+def refresher(data, stop):
+    while not stop.is_set():
+        try:
+            data.refresh()
+        except Exception:
+            pass
+        stop.wait(EVERY)
+
+
+class Screen:
+    def __init__(self, scr, data):
+        self.scr, self.data, self.logo = scr, data, logo()
+        curses.curs_set(0)
+        curses.start_color()
+        try:
+            curses.use_default_colors()
+            bg = -1
+        except curses.error:
+            bg = curses.COLOR_BLACK
+        for i, c in enumerate((curses.COLOR_CYAN, curses.COLOR_GREEN, curses.COLOR_RED,
+                               curses.COLOR_YELLOW, curses.COLOR_WHITE, curses.COLOR_BLUE), 1):
+            curses.init_pair(i, c, bg)
+        self.CYAN, self.GREEN, self.RED, self.YELLOW, self.WHITE, self.BLUE = (curses.color_pair(i) for i in range(1, 7))
+
+    def put(self, win, y, x, parts, w):
+        """`parts`: [(text, attr)], cut to `w` columns at (y, x)."""
+        for text, attr in parts:
+            if w <= 0:
+                break
+            t = cut(text, w)
+            try:
+                win.addstr(y, x, t, attr)
+            except curses.error:
+                pass
+            x += tw(t)
+            w -= tw(t)
+
+    def box(self, y, x, h, w, title):
+        """A framed panel; returns its inner area (y, x, h, w)."""
+        if h < 3 or w < 6:
+            return y, x, 0, 0
+        s = self.scr
+        try:
+            s.attron(self.BLUE)
+            s.addch(y, x, curses.ACS_ULCORNER)
+            s.hline(y, x + 1, curses.ACS_HLINE, w - 2)
+            s.addch(y, x + w - 1, curses.ACS_URCORNER)
+            s.vline(y + 1, x, curses.ACS_VLINE, h - 2)
+            s.vline(y + 1, x + w - 1, curses.ACS_VLINE, h - 2)
+            s.addch(y + h - 1, x, curses.ACS_LLCORNER)
+            s.hline(y + h - 1, x + 1, curses.ACS_HLINE, w - 2)
+            # (The bottom right corner of the screen cannot take a character without scrolling.)
+            try:
+                s.addch(y + h - 1, x + w - 1, curses.ACS_LRCORNER)
+            except curses.error:
+                pass
+            s.attroff(self.BLUE)
+        except curses.error:
+            pass
+        self.put(s, y, x + 2, [(" " + title + " ", self.CYAN | curses.A_BOLD)], w - 4)
+        return y + 1, x + 2, h - 2, w - 4
+
+    def status_parts(self, line):
+        label, value = line[:13], line[13:]
+        attr = 0
+        if re.search(r"as it should be|incoming dropped|timer on|\(success\)|answers", value):
+            attr = self.GREEN
+        if re.search(r"NOT ON|failed|exit-code|\? \(no answer|timeout|signal", value):
+            attr = self.RED
+        # A last run that did not succeed (oom-kill, core-dump, resources...): red whatever its word.
+        if label.startswith("Last run") and "(" in value and "(success)" not in value:
+            attr = self.RED
+        if re.search(r"timer off", value):
+            attr = self.YELLOW
+        return [(label, curses.A_BOLD), (value, attr)]
+
+    def draw(self):
+        s = self.scr
+        s.erase()
+        H, W = s.getmaxyx()
+        if H < 10 or W < 40:
+            self.put(s, 0, 0, [("screen too small", self.RED)], W - 1)
+            s.refresh()
+            return
+        with self.data.lock:
+            d = self.data
+            status, machine, log = list(d.status), list(d.machine), d.log
+            ex, ex_err, ex_host = d.explore, d.explore_err, d.explore_host
+            scan, scan_t, updated = d.scan, d.scan_t, d.updated
+        now = time.time()
+        # The header: the logo, the machine's name and the time.
+        host = clean(os.uname().nodename)
+        for i, row in enumerate(self.logo):
+            self.put(s, i, 1, [(row, self.CYAN | curses.A_BOLD)], 10)
+        self.put(s, 0, 13, [("vault", curses.A_BOLD), ("  " + host, 0)], W - 14)
+        self.put(s, 1, 13, [(time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime(now)), 0)], W - 14)
+        self.put(s, 2, 13, [(time.strftime("%H:%M %Z local", time.localtime(now)), 0)], W - 14)
+        note = ("data " + time.strftime("%H:%M:%S", time.localtime(updated))) if updated else "reading..."
+        self.put(s, 0, max(13, W - tw(note) - 2), [(note, self.BLUE)], tw(note))
+        top = 4
+        split = W >= 120
+        lw = (W * 3) // 5 if split else W
+        rw = W - lw
+        # Left: the vault (Status, the machine, the posting log), the network, the atoms.
+        vlines = [self.status_parts(line) for line in status]
+        if machine:
+            vlines.append([("Machine      ", curses.A_BOLD), (", ".join(machine), 0)])
+        if log:
+            vlines.append([("Posting log  ", curses.A_BOLD), (log, 0)])
+        if not vlines:
+            vlines = [[("reading...", self.BLUE)]]
+        # (The vault's own panel first: the network and the atoms give way on a short screen.)
+        vh = max(3, min(len(vlines) + 2, H - top - 3))
+        iy, ix, ih, iw = self.box(top, 0, vh, lw, "VAULT")
+        for i, parts in enumerate(vlines[:ih]):
+            self.put(s, iy + i, ix, parts, iw)
+        y = top + vh
+        nlines = self.safe(self.network_lines, ex, ex_err)
+        nh = min(len(nlines) + 2, max(3, H - y - 3))
+        iy, ix, ih, iw = self.box(y, 0, nh, lw, "NETWORK  " + (ex_host or ""))
+        for i, parts in enumerate(nlines[:ih]):
+            self.put(s, iy + i, ix, parts, iw)
+        y += nh
+        if H - y >= 3:
+            iy, ix, ih, iw = self.box(y, 0, H - y, lw, "ATOMS")
+            for i, parts in enumerate(self.safe(self.atom_lines, ex, iw)[:ih]):
+                self.put(s, iy + i, ix, parts, iw)
+        # Right: the world scanner.
+        if split:
+            iy, ix, ih, iw = self.box(top, lw, H - top, rw, "WORLD SCANNER")
+            for i, parts in enumerate(self.safe(self.scan_lines, scan, scan_t, iw)[:ih]):
+                self.put(s, iy + i, ix, parts, iw)
+        s.refresh()
+
+    def safe(self, lines, *args):
+        """A panel's lines; data it cannot draw blanks only that panel (review 2026-11-23)."""
+        try:
+            return lines(*args)
+        except Exception as e:
+            return [[("could not draw this (" + clean(type(e).__name__) + ")", self.RED)]]
+
+    def network_lines(self, ex, err):
+        if not ex:
+            return [[(err or "reading...", self.RED if err else self.BLUE)]]
+        f = ex.get("figures") or {}
+
+        def n(v):
+            return "?" if v is None else clean(v)
+        out = [[("Atoms        ", curses.A_BOLD), (f"{n(f.get('online'))} online", self.GREEN),
+                (f" of {n(f.get('atoms'))}, {n(f.get('chip_verified'))} chip-verified, {n(f.get('electrodes'))} electrode(s)", 0)],
+               [("Today        ", curses.A_BOLD),
+                (f"{n(f.get('packets_today'))} packets, {n(f.get('confirmed_today'))} confirmed, {num(f.get('photons_today')):.2f} photons", 0)]]
+        c = ex.get("connections")
+        if isinstance(c, dict):
+            v = c.get("versions") if isinstance(c.get("versions"), dict) else {}
+            vs = ", ".join(f"{clean(k)} x{clean(x)}" for k, x in v.items())
+            out.append([("Connected    ", curses.A_BOLD),
+                        (f"{n(c.get('atoms'))} atoms, {n(c.get('behind_router'))} behind a router, {n(c.get('ipv6'))} over IPv6; versions {vs}", 0)])
+        e = ex.get("epochs")
+        if isinstance(e, list) and e and isinstance(e[0], dict):
+            e = e[0]
+            total = num(e.get("total")) / 1e6
+            out.append([("Last epoch   ", curses.A_BOLD),
+                        (f"{n(e.get('epoch'))} ({n(e.get('start'))} to {n(e.get('end'))}): {total:,.2f} NEON to {n(e.get('wallets'))} wallet(s)", 0)])
+        return out
+
+    def atom_lines(self, ex, w):
+        if not ex:
+            return []
+        atoms = [a for a in (ex.get("atoms") or []) if isinstance(a, dict)]
+        atoms.sort(key=lambda a: (a.get("online") is not True, -num(a.get("photons_today"))))
+        now_ms = time.time() * 1000
+        out = [[(pad("", 4) + pad("name", 22) + pad("kind", 11) + pad("version", 10) + pad("today", 9) + "seen", curses.A_BOLD)]]
+        for a in atoms:
+            on = a.get("online") is True
+            name = clean(a.get("name")) or clean(a.get("peer"))[:12]
+            seen = "" if on else ("not seen" if not num(a.get("last_ms")) else ago(a.get("last_ms"), now_ms) + " ago")
+            out.append([("on  " if on else "off ", self.GREEN if on else self.RED),
+                        (pad(name, 22) + pad("electrode" if a.get("hub") is True else "atom", 11)
+                         + pad(clean(a.get("version")) or "?", 10) + pad(f"{num(a.get('photons_today')):.1f}", 9) + seen, 0)])
+        return out
+
+    def scan_lines(self, scan, scan_t, w):
+        if scan is None:
+            return [[("nothing yet (the electrode answers once it runs this release)", self.BLUE)]]
+        now_ms = time.time() * 1000
+        out = [[(f"{len(scan)} packets, newest {ago(scan[0].get('t'), now_ms) if scan else '?'} ago", self.BLUE)]]
+        kinds = {"text": "text", "position": "pos", "nodeinfo": "node", "telemetry": "tele", "advert": "advert"}
+        for i in scan:
+            mc = clean(i.get("net")) == "meshcore"
+            who = clean(i.get("name")) or clean(i.get("from"))
+            hm = time.strftime("%H:%M", time.localtime(num(i.get("t")) / 1000))
+            k = kinds.get(clean(i.get("kind")), clean(i.get("kind")))
+            heard = int(num(i.get("heard")))
+            text = clean(i.get("text"))
+            parts = [(hm + " ", 0), ("MC " if mc else "MT ", (self.YELLOW if mc else self.CYAN) | curses.A_BOLD),
+                     (pad(who, 16) + " ", 0), (pad(k, 7), self.BLUE)]
+            if heard > 1:
+                parts.append((f"x{heard} ", self.BLUE))
+            if text:
+                parts.append((text, 0))
+            out.append(parts)
+        return out
+
+
+def main(scr):
+    data = Data()
+    stop = threading.Event()
+    threading.Thread(target=refresher, args=(data, stop), daemon=True).start()
+    screen = Screen(scr, data)
+    scr.timeout(1000)
+    while True:
+        try:
+            screen.draw()
+        except Exception:
+            pass
+        # A key does nothing; a resize is drawn at once.
+        try:
+            scr.getch()
+        except curses.error:
+            time.sleep(1)
+
+
+if __name__ == "__main__":
+    locale.setlocale(locale.LC_ALL, "")
+    os.makedirs(CACHE, mode=0o700, exist_ok=True)
+    # Raw: no Ctrl+C or Ctrl+S on an always-on screen.
+    def run_main(scr):
+        curses.raw()
+        curses.noecho()
+        main(scr)
+    curses.wrapper(run_main)
+VAULT_MONITOR_PY
+}
+
 monitor() {
     [ "$(id -u)" = 0 ] || die "as root (neon-vault-monitor.service runs it)"
+    if command -v python3 >/dev/null 2>&1 && python3 -c 'import curses' 2>/dev/null; then
+        monitor_py > "$HOME_DIR/vault-monitor.py.new" && mv -f "$HOME_DIR/vault-monitor.py.new" "$HOME_DIR/vault-monitor.py"
+        # No screen blanking; UTF-8 mode on; the frames in Unicode box-drawing characters (every console
+        # font has them), not the terminal's VT100 line set.
+        setterm --blank 0 --powerdown 0 2>/dev/null || true
+        printf '\033%%G'
+        # Not exec'd: a screen that cannot start (a curses error, a file not written) falls back to the
+        # plain-text one below instead of a blank screen restarted every 10 s (review 2026-11-23).
+        env LANG=C.UTF-8 LC_ALL=C.UTF-8 NCURSES_NO_UTF8_ACS=1 python3 "$HOME_DIR/vault-monitor.py" && exit 0
+        echo "the curses screen stopped: the plain-text one instead" >&2
+    fi
+    # Without Python's curses: the screen as plain text (each a line short of the screen: the last
+    # newline would scroll the top away).
     bold=$(tput bold 2>/dev/null || true); dim=$(tput dim 2>/dev/null || true)
     green=$(tput setaf 2 2>/dev/null || true); red=$(tput setaf 1 2>/dev/null || true)
     yellow=$(tput setaf 3 2>/dev/null || true); cyan=$(tput setaf 6 2>/dev/null || true)
-    off=$(tput sgr0 2>/dev/null || true)
+    # (linux's sgr0 ends with SI, \017: a byte the console shows nothing for, but one more to count.)
+    off=$(tput sgr0 2>/dev/null | tr -d '\017' || true)
     VAULT_MONITOR=1
     # No cursor, no screen blanking, no keys (no Ctrl+C, Ctrl+S or echo): an always-on screen.
     # (UTF-8 mode on: a byte from the electrode's text that would be a control in the console's
@@ -425,12 +937,12 @@ monitor() {
         # Each line cut to its column's width (colours not counted), no more lines than the screen
         # has: a long line would wrap and scroll the top away.
         if [ "$right" -eq 0 ]; then
-            fit "$left" < "$TMP/screen" | head -n "$rows"
+            fit "$left" < "$TMP/screen" | head -n $((rows - 1))
         else
             awk -v n="$rows" '{ print } END { for (i = NR; i < n; i++) print "" }' "$TMP/screen" | head -n "$rows" | fit "$left" pad > "$TMP/left"
             fit "$right" < "$TMP/scan-col" | head -n "$rows" > "$TMP/right"
             # (Joined at a control character no text on either side has: they are taken out.)
-            paste -d "$(printf '\001')" "$TMP/left" "$TMP/right" | head -n "$rows" | sed "s/$(printf '\001')/ $dim│$off /"
+            paste -d "$(printf '\001')" "$TMP/left" "$TMP/right" | head -n $((rows - 1)) | sed "s/$(printf '\001')/ $dim│$off /"
         fi
         sleep "$MONITOR_EVERY"
     done
@@ -441,7 +953,7 @@ monitor() {
 # sequences (the colours) not counted, a UTF-8 character counted once (the logo, names: owner
 # 2026-11-23, the screen in two columns lines them up).
 fit() {
-    awk -v w="$1" -v pad="${2:-}" -v off="$off" '
+    LC_ALL=C awk -v w="$1" -v pad="${2:-}" -v off="$off" '
     BEGIN { for (i = 128; i < 192; i++) cont = cont sprintf("%c", i) }
     {
         s = $0; out = ""; n = 0; esc = 0; keep = 1
@@ -453,6 +965,8 @@ fit() {
                 }
                 s = substr(s, 2); continue
             }
+            # (Another control character takes no column.)
+            if (c < " ") { out = out c; s = substr(s, 2); continue }
             # (A UTF-8 continuation byte goes with the character before it.)
             if (index(cont, c)) { if (keep) out = out c; s = substr(s, 2); continue }
             keep = (n < w)
@@ -472,15 +986,16 @@ SCAN_EVERY_MIN=2
 scan_column() {
     w=$1; rows=$2
     remote=$(conf REMOTE); port=$(conf PORT)
-    if [ -n "$remote" ] && { [ ! -s "$TMP/scan.json" ] || [ -z "$(find "$TMP/scan.json" -mmin -"$SCAN_EVERY_MIN" 2>/dev/null)" ]; }; then
-        if as_user ssh -i "$STATE/ssh/id_ed25519" -p "${port:-22}" -o BatchMode=yes -o ConnectTimeout=15 \
+    # (When it was last asked, answered or not: a stamp of its own, every two minutes either way.)
+    if [ -n "$remote" ] && { [ ! -f "$TMP/scan.tried" ] || [ -z "$(find "$TMP/scan.tried" -mmin -"$SCAN_EVERY_MIN" 2>/dev/null)" ]; }; then
+        touch "$TMP/scan.tried"
+        if as_user ssh -i "$STATE/ssh/id_ed25519" -p "${port:-22}" -o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
             -o UserKnownHostsFile="$STATE/ssh/known_hosts" "$remote" scan 2>/dev/null | head -c 2000000 > "$TMP/scan.new" \
             && jq -e '.items | arrays' "$TMP/scan.new" >/dev/null 2>&1; then
             mv -f "$TMP/scan.new" "$TMP/scan.json"
         else
             rm -f "$TMP/scan.new"
             # (Kept: the last answer, until a newer one; marked old by its time.)
-            touch "$TMP/scan.json"
         fi
     fi
     rule() { printf '%s%s%s\n' "$dim" "$(printf '%*s' "$w" '' | tr ' ' '-')" "$off"; }

@@ -52,7 +52,7 @@ grep -q 'vault.sh menu' /home/ne/.bash_profile 2>/dev/null || sh /opt/neon-vault
 
 echo
 # (The rounded corners only when the console's font has them, as vault.sh's monitor.)
-m=$(mktemp)
+m="$tmp/fontmap"
 if setfont -ou "$m" 2>/dev/null && grep -qi 'U+256d' "$m"; then
     printf '%s\n' '╭╮╭╮╭╮╭╮' '│││╯││││   vault' '││╰ ╰╯││'
 else
