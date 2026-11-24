@@ -9,6 +9,9 @@ STATE=${NEON_STATE_DIR:-/opt/neon}
 # A state directory changed in the panel (neond.toml) is where neond writes update.json.
 if [ -z "${NEON_STATE_DIR:-}" ] && [ -f /opt/neon/neond.toml ]; then
     d=$(sed -n 's/^state_dir *= *"\(.*\)"$/\1/p' /opt/neon/neond.toml | head -n 1)
+    # As a literal string too: neond (the toml crate) writes a path holding \ or " in single quotes
+    # (review 2026-11-24).
+    [ -n "$d" ] || d=$(sed -n "s/^state_dir *= *'\(.*\)'\$/\1/p" /opt/neon/neond.toml | head -n 1)
     [ -n "$d" ] && [ -d "$d" ] && STATE=$d
 fi
 # --state-dir on the command line (NEOND_ARGS, from the unit's environment file) wins.
