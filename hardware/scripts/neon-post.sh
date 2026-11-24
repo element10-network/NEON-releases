@@ -124,10 +124,16 @@ for n in $waiting; do
         # the one on chain, is filed by its hash (the electrode keeps a replaced copy for that);
         # else the electrode's (review 2026-11-23: its newer file failed the check every day and
         # both machines stayed stuck).
-        if [ -s "$KEEP/epoch-$n.json" ] && tok check "$KEEP/epoch-$n.json" >/dev/null 2>&1 \
-            && remote done "$n" "$(jq -S -c . "$KEEP/epoch-$n.json" | sha256sum | cut -c1-64)"; then
+        # (Filed here first: its root is on chain, and an answer lost on the way back must not
+        # leave it unfiled here, review 2026-11-23.)
+        if [ -s "$KEEP/epoch-$n.json" ] && tok check "$KEEP/epoch-$n.json" >/dev/null 2>&1; then
             file_local "$n"
-            continue
+            if remote done "$n" "$(jq -S -c . "$KEEP/epoch-$n.json" | sha256sum | cut -c1-64)"; then
+                continue
+            fi
+            kept_on_chain=1
+        else
+            kept_on_chain=
         fi
         # The electrode's copy, not one kept here: posted by hand, or kept from a run whose post
         # failed before the electrode computed it again, this one may be missing or another.
@@ -135,6 +141,11 @@ for n in $waiting; do
         # Only the one whose root is on chain (another would show "does not match the posted
         # root" on every claim page, and epoch n+1's post would refuse it as its previous).
         if ! tok check "$KEEP/epoch-$n.json.part"; then
+            rm -f "$KEEP/epoch-$n.json.part"
+            if [ -n "$kept_on_chain" ]; then
+                echo "epoch $n: this machine's file ($KEEP/epoch-$n.json) is the one on chain, but the electrode could not file it and its own differs: copy this machine's file to the electrode's epochs/ by hand" >&2
+                exit 1
+            fi
             echo "epoch $n: not filed: its file could not be matched with the root on chain (the reason above; a NEON-token CLI older than bd12b03 has no 'check': rebuild it)" >&2
             exit 1
         fi
